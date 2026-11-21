@@ -1,9 +1,8 @@
 import request from 'supertest';
-import { createApp } from '../../src/app';
-import { loadConfig } from '../../src/config/app.config';
+import { buildTestApp } from '../helpers/test-app';
 
 describe('GET /health', () => {
-  const app = createApp(loadConfig({ NODE_ENV: 'test' }));
+  const { app } = buildTestApp();
 
   it('returns 200 with process status', async () => {
     const response = await request(app).get('/health');
