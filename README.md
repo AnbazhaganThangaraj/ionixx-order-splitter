@@ -382,6 +382,18 @@ npm test                # 174 tests
 npm run test:coverage   # coverage report in coverage/
 ```
 
+### Coverage
+
+![Jest coverage report: 99% statements, 87% branches, 100% functions, 99% lines](docs/images/coverage-report.png)
+
+Every function is covered, and over 99% of statements and lines. The uncovered
+branches are mostly defensive fallbacks (for example, default values for settings that
+are always present after validation, and body-parser error types that Express does not
+produce in practice). Run `npm run test:coverage` and open `coverage/lcov-report/index.html`
+to see the current report.
+
+### What the tests cover
+
 The tests focus on behaviour and edge cases:
 
 - **Validation** – missing fields, wrong types, unsupported order types and currencies,
