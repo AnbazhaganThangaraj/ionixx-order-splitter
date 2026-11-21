@@ -10,6 +10,7 @@ import { requestId } from './middlewares/request-id.middleware';
 import { recordMountPath, responseTimeLogger } from './middlewares/response-time.middleware';
 import { InMemoryOrderRepository } from './repositories/in-memory-order.repository';
 import type { OrderRepository } from './repositories/order.repository';
+import { createDocsRouter } from './routes/docs.routes';
 import { createHealthRouter } from './routes/health.routes';
 import { createOrderRouter } from './routes/order.routes';
 import { WeekdayMarketScheduler, type MarketScheduler } from './services/market-scheduler.service';
@@ -50,6 +51,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
   app.use(express.json({ limit: '100kb' }));
 
   app.use('/health', recordMountPath(), createHealthRouter());
+  app.use('/docs', recordMountPath(), createDocsRouter(config));
   app.use(
     '/api/v1/orders',
     recordMountPath(),
