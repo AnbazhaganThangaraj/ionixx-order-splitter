@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build: install all dependencies and compile TypeScript ----
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 # --ignore-scripts: dependency install scripts never run during the image build
@@ -12,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # ---- Runtime: production dependencies + compiled JS only, non-root ----
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
