@@ -13,12 +13,16 @@ const sha256 = (value: string): Buffer => createHash('sha256').update(value, 'ut
 /**
  * Authenticates partners by the X-API-Key header and puts their id in res.locals.
  *
- * Keys are compared as SHA-256 digests with timingSafeEqual, and every stored key is
+ * Only SHA-256 digests of keys are held in memory. The presented key is hashed and
+ * compared with timingSafeEqual, and every stored key is
  * checked (no early exit), so response timing does not reveal how much of a guess
  * was right or which key matched.
  */
 export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[]): RequestHandler => {
-  const stored = apiKeys.map(({ partnerId, key }) => ({ partnerId, digest: sha256(key) }));
+  const stored = apiKeys.map(({ partnerId, keyHash }) => ({
+    partnerId,
+    digest: Buffer.from(keyHash, 'hex'),
+  }));
 
   return (req, res, next) => {
     if (stored.length === 0) {

@@ -27,6 +27,13 @@ const start = (): void => {
     );
   }
 
+  if (config.nodeEnv === 'production' && config.auth.plaintextKeysConfigured) {
+    logger.warn(
+      'Plaintext API keys are configured via API_KEYS. Prefer API_KEY_HASHES in production ' +
+        '(generate with: npm run hash-key -- --generate).',
+    );
+  }
+
   const lifecycle = new AppLifecycle();
   const app = createApp(config, { logger, lifecycle });
 

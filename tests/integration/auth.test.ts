@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { hashApiKey } from '../../src/config/app.config';
 import { briefExampleRequest } from '../fixtures/orders';
 import { buildTestApp } from '../helpers/test-app';
 
@@ -97,6 +98,12 @@ describe('API key authentication', () => {
     const { app } = secured();
     expect((await request(app).get('/health')).status).toBe(200);
     expect((await request(app).get('/docs/openapi.json')).status).toBe(200);
+  });
+
+  it('authenticates partners configured by hash only (API_KEY_HASHES)', async () => {
+    const { app } = buildTestApp({ API_KEY_HASHES: `partner-h:${hashApiKey(KEY_A)}` });
+    const response = await request(app).get(ORDERS).set('X-API-Key', KEY_A);
+    expect(response.status).toBe(200);
   });
 
   it('is disabled when no keys are configured (local development)', async () => {

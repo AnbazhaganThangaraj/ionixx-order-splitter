@@ -5,7 +5,7 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
-  collectCoverageFrom: ['src/**/*.ts', '!src/server.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/server.ts', '!src/scripts/**'],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
   clearMocks: true,

@@ -1,4 +1,4 @@
-import { ConfigError, loadConfig } from '../../../src/config/app.config';
+import { ConfigError, hashApiKey, loadConfig } from '../../../src/config/app.config';
 
 describe('loadConfig', () => {
   it('applies safe defaults when nothing is set', () => {
@@ -49,15 +49,43 @@ describe('loadConfig', () => {
       expect(loadConfig({}).auth.apiKeys).toEqual([]);
     });
 
-    it('parses partner:key pairs, allowing several keys per partner', () => {
+    it('parses partner:key pairs, keeping only SHA-256 hashes of the keys', () => {
       const config = loadConfig({
         API_KEYS: ` alpha:${key('a1')}, alpha:${key('a2')} ,beta_2:${key('b')} `,
       });
       expect(config.auth.apiKeys).toEqual([
-        { partnerId: 'alpha', key: key('a1') },
-        { partnerId: 'alpha', key: key('a2') },
-        { partnerId: 'beta_2', key: key('b') },
+        { partnerId: 'alpha', keyHash: hashApiKey(key('a1')) },
+        { partnerId: 'alpha', keyHash: hashApiKey(key('a2')) },
+        { partnerId: 'beta_2', keyHash: hashApiKey(key('b')) },
       ]);
+      expect(JSON.stringify(config)).not.toContain(key('a1'));
+      expect(config.auth.plaintextKeysConfigured).toBe(true);
+    });
+
+    it('accepts pre-hashed keys via API_KEY_HASHES (the production format)', () => {
+      const hash = hashApiKey(key('h'));
+      const config = loadConfig({ API_KEY_HASHES: `gamma:${hash.toUpperCase()}` });
+      expect(config.auth.apiKeys).toEqual([{ partnerId: 'gamma', keyHash: hash }]);
+      expect(config.auth.plaintextKeysConfigured).toBe(false);
+    });
+
+    it.each(['gamma:abc', `gamma:${'z'.repeat(64)}`, 'abc'])(
+      'rejects an invalid hash entry %p',
+      (value) => {
+        expect(() => loadConfig({ API_KEY_HASHES: value })).toThrow(/API_KEY_HASHES/);
+      },
+    );
+
+    it('rejects the same key configured twice, across both variables', () => {
+      expect(() =>
+        loadConfig({ API_KEYS: `a:${key('x')}`, API_KEY_HASHES: `b:${hashApiKey(key('x'))}` }),
+      ).toThrow(/more than once/);
+    });
+
+    it('matches the documented hash of a known key', () => {
+      expect(hashApiKey('abc')).toBe(
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      );
     });
 
     it.each([
@@ -81,7 +109,13 @@ describe('loadConfig', () => {
     });
 
     it('is required in production', () => {
-      expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/API_KEYS is required/);
+      expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(
+        /is required when NODE_ENV=production/,
+      );
+      expect(
+        loadConfig({ NODE_ENV: 'production', API_KEY_HASHES: `alpha:${hashApiKey(key('a'))}` }).auth
+          .apiKeys,
+      ).toHaveLength(1);
       expect(
         loadConfig({ NODE_ENV: 'production', API_KEYS: `alpha:${key('a')}` }).auth.apiKeys,
       ).toHaveLength(1);

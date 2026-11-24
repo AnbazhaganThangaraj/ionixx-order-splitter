@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -14,47 +15,59 @@ const isValidTimeZone = (zone: string): boolean => {
 
 const PARTNER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MIN_API_KEY_LENGTH = 24;
+const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export interface ApiKeyEntry {
   readonly partnerId: string;
-  readonly key: string;
+  /** SHA-256 of the API key, hex. Plaintext keys are hashed at load and then discarded. */
+  readonly keyHash: string;
 }
 
+export const hashApiKey = (key: string): string =>
+  createHash('sha256').update(key, 'utf8').digest('hex');
+
 /**
- * API_KEYS format: "partnerId:key,partnerId:key". Each partner can hold several keys
- * (useful for rotation). Keys must be long random strings and unique.
+ * Parses "partnerId:value,partnerId:value". Each partner may hold several keys
+ * (rotation). For API_KEYS the value is the key itself (development convenience);
+ * for API_KEY_HASHES it is the SHA-256 hex digest, so the real key never sits in config.
  */
-const parseApiKeys = (value: string, ctx: z.RefinementCtx): ApiKeyEntry[] => {
-  const entries: ApiKeyEntry[] = [];
-  const seenKeys = new Set<string>();
-  value
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .forEach((part, index) => {
-      const separator = part.indexOf(':');
-      const partnerId = separator > 0 ? part.slice(0, separator) : '';
-      const key = separator > 0 ? part.slice(separator + 1) : '';
-      // Never echo the key itself in error messages.
-      if (!PARTNER_ID.test(partnerId)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `entry ${index + 1} must look like "partnerId:key"`,
-        });
-      } else if (key.length < MIN_API_KEY_LENGTH) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `key for "${partnerId}" must be at least ${MIN_API_KEY_LENGTH} characters`,
-        });
-      } else if (seenKeys.has(key)) {
-        ctx.addIssue({ code: 'custom', message: `key for "${partnerId}" is used more than once` });
-      } else {
-        seenKeys.add(key);
-        entries.push({ partnerId, key });
-      }
-    });
-  return entries;
-};
+const parseKeyList =
+  (kind: 'plaintext' | 'hash') =>
+  (value: string, ctx: z.RefinementCtx): ApiKeyEntry[] => {
+    const entries: ApiKeyEntry[] = [];
+    value
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .forEach((part, index) => {
+        const separator = part.indexOf(':');
+        const partnerId = separator > 0 ? part.slice(0, separator) : '';
+        const secret = separator > 0 ? part.slice(separator + 1) : '';
+        // Never echo the secret itself in error messages.
+        if (!PARTNER_ID.test(partnerId)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `entry ${index + 1} must look like "partnerId:${kind === 'hash' ? 'sha256hex' : 'key'}"`,
+          });
+        } else if (kind === 'plaintext' && secret.length < MIN_API_KEY_LENGTH) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `key for "${partnerId}" must be at least ${MIN_API_KEY_LENGTH} characters`,
+          });
+        } else if (kind === 'hash' && !SHA256_HEX.test(secret.toLowerCase())) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `hash for "${partnerId}" must be a 64-character SHA-256 hex digest`,
+          });
+        } else {
+          entries.push({
+            partnerId,
+            keyHash: kind === 'hash' ? secret.toLowerCase() : hashApiKey(secret),
+          });
+        }
+      });
+    return entries;
+  };
 
 const toMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
@@ -85,7 +98,8 @@ const envSchema = z
     MARKET_OPEN_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('09:30'),
     MARKET_CLOSE_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('16:00'),
     TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
-    API_KEYS: z.string().transform(parseApiKeys).default([]),
+    API_KEYS: z.string().transform(parseKeyList('plaintext')).default([]),
+    API_KEY_HASHES: z.string().transform(parseKeyList('hash')).default([]),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
     IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
@@ -94,9 +108,28 @@ const envSchema = z
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
     path: ['MARKET_OPEN_TIME'],
   })
-  .refine((env) => env.NODE_ENV !== 'production' || env.API_KEYS.length > 0, {
-    message: 'API_KEYS is required when NODE_ENV=production (authentication cannot be disabled)',
-    path: ['API_KEYS'],
+  .superRefine((env, ctx) => {
+    const all = [...env.API_KEYS, ...env.API_KEY_HASHES];
+    const seen = new Map<string, string>();
+    for (const entry of all) {
+      const owner = seen.get(entry.keyHash);
+      if (owner !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['API_KEYS'],
+          message: `the same key is configured more than once ("${owner}" and "${entry.partnerId}")`,
+        });
+      }
+      seen.set(entry.keyHash, entry.partnerId);
+    }
+    if (env.NODE_ENV === 'production' && all.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['API_KEYS'],
+        message:
+          'API_KEY_HASHES (or API_KEYS) is required when NODE_ENV=production (authentication cannot be disabled)',
+      });
+    }
   });
 
 export interface AppConfig {
@@ -123,6 +156,8 @@ export interface AppConfig {
   readonly auth: {
     /** Empty = authentication disabled (only allowed outside production). */
     readonly apiKeys: readonly ApiKeyEntry[];
+    /** True when plaintext keys were supplied via API_KEYS (fine locally, discouraged in production). */
+    readonly plaintextKeysConfigured: boolean;
   };
   readonly http: {
     /** Number of reverse proxies / load balancers in front of the app (0 = none). */
@@ -173,7 +208,8 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
       ttlSeconds: parsed.IDEMPOTENCY_TTL_SECONDS,
     },
     auth: {
-      apiKeys: parsed.API_KEYS,
+      apiKeys: [...parsed.API_KEYS, ...parsed.API_KEY_HASHES],
+      plaintextKeysConfigured: parsed.API_KEYS.length > 0,
     },
     http: {
       trustProxyHops: parsed.TRUST_PROXY,
