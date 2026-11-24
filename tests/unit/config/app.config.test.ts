@@ -106,6 +106,8 @@ describe('loadConfig', () => {
     ['MARKET_CLOSE_TIME', '25:00'],
     ['TRUST_PROXY', '-1'],
     ['TRUST_PROXY', 'yes'],
+    ['RATE_LIMIT_MAX', '0'],
+    ['RATE_LIMIT_WINDOW_MS', '10'],
   ])('fails fast when %s=%s', (key, value) => {
     expect(() => loadConfig({ [key]: value })).toThrow(ConfigError);
   });

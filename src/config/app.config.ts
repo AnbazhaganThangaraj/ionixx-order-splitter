@@ -86,6 +86,8 @@ const envSchema = z
     MARKET_CLOSE_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('16:00'),
     TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
     API_KEYS: z.string().transform(parseApiKeys).default([]),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
+    RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
   })
   .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
@@ -120,6 +122,8 @@ export interface AppConfig {
   readonly http: {
     /** Number of reverse proxies / load balancers in front of the app (0 = none). */
     readonly trustProxyHops: number;
+    /** Max API requests per client IP per window. */
+    readonly rateLimit: { readonly windowMs: number; readonly max: number };
   };
 }
 
@@ -165,6 +169,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     },
     http: {
       trustProxyHops: parsed.TRUST_PROXY,
+      rateLimit: { windowMs: parsed.RATE_LIMIT_WINDOW_MS, max: parsed.RATE_LIMIT_MAX },
     },
   };
 };

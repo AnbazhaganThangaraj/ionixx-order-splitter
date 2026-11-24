@@ -7,6 +7,7 @@ import { createLogger, type Logger } from './lib/logger';
 import { apiKeyAuth } from './middlewares/api-key-auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFound } from './middlewares/not-found.middleware';
+import { apiRateLimit } from './middlewares/rate-limit.middleware';
 import { requestId } from './middlewares/request-id.middleware';
 import {
   apiSecurityHeaders,
@@ -66,6 +67,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     '/api/v1/orders',
     recordMountPath(),
     noStore(),
+    apiRateLimit(config.http.rateLimit),
     apiKeyAuth(config.auth.apiKeys),
     createOrderRouter(new OrderController(orderService)),
   );
