@@ -304,10 +304,10 @@ describe('Orders API', () => {
 
   it('returns 404 JSON for unknown routes', async () => {
     const { app } = buildTestApp();
-    const response = await request(app).delete(ORDERS);
+    const response = await request(app).get('/api/v1/unknown');
 
     expect(response.status).toBe(404);
-    expect(response.body.error.message).toBe('Route DELETE /api/v1/orders not found');
+    expect(response.body.error.message).toBe('Route GET /api/v1/unknown not found');
   });
 
   it('data does not survive a restart (new app instance = empty history)', async () => {

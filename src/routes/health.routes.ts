@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { AppLifecycle } from '../lib/lifecycle';
+import { methodNotAllowed } from '../middlewares/method-not-allowed.middleware';
 
 /**
  * - GET /health/live  liveness: the process is up (restart it if this fails)
@@ -28,6 +29,8 @@ export const createHealthRouter = (lifecycle: AppLifecycle): Router => {
     }
     res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
   });
+
+  router.all(['/', '/live', '/ready'], methodNotAllowed(['GET']));
 
   return router;
 };
