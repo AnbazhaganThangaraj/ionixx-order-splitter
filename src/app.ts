@@ -10,7 +10,7 @@ import { apiKeyAuth } from './middlewares/api-key-auth.middleware';
 import { connectionDrain } from './middlewares/connection-drain.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFound } from './middlewares/not-found.middleware';
-import { apiRateLimit } from './middlewares/rate-limit.middleware';
+import { apiRateLimit, partnerRateLimit } from './middlewares/rate-limit.middleware';
 import { requestId } from './middlewares/request-id.middleware';
 import {
   apiSecurityHeaders,
@@ -83,6 +83,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     noStore(),
     apiRateLimit(config.http.rateLimit, audit),
     apiKeyAuth(config.auth.apiKeys, audit),
+    partnerRateLimit(config.http.rateLimit, audit),
     createOrderRouter(new OrderController(orderService), idempotencyStore, audit),
   );
 

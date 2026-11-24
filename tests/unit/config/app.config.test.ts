@@ -141,6 +141,7 @@ describe('loadConfig', () => {
     ['TRUST_PROXY', '-1'],
     ['TRUST_PROXY', 'yes'],
     ['RATE_LIMIT_MAX', '0'],
+    ['PARTNER_RATE_LIMIT_MAX', '0'],
     ['RATE_LIMIT_WINDOW_MS', '10'],
     ['IDEMPOTENCY_TTL_SECONDS', '5'],
   ])('fails fast when %s=%s', (key, value) => {

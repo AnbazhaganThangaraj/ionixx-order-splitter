@@ -102,6 +102,7 @@ const envSchema = z
     API_KEY_HASHES: z.string().transform(parseKeyList('hash')).default([]),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
+    PARTNER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000_000).default(600),
     IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
   })
   .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
@@ -162,8 +163,12 @@ export interface AppConfig {
   readonly http: {
     /** Number of reverse proxies / load balancers in front of the app (0 = none). */
     readonly trustProxyHops: number;
-    /** Max API requests per client IP per window. */
-    readonly rateLimit: { readonly windowMs: number; readonly max: number };
+    /** Max API requests per client IP per window, and per authenticated partner per window. */
+    readonly rateLimit: {
+      readonly windowMs: number;
+      readonly max: number;
+      readonly partnerMax: number;
+    };
   };
 }
 
@@ -213,7 +218,11 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     },
     http: {
       trustProxyHops: parsed.TRUST_PROXY,
-      rateLimit: { windowMs: parsed.RATE_LIMIT_WINDOW_MS, max: parsed.RATE_LIMIT_MAX },
+      rateLimit: {
+        windowMs: parsed.RATE_LIMIT_WINDOW_MS,
+        max: parsed.RATE_LIMIT_MAX,
+        partnerMax: parsed.PARTNER_RATE_LIMIT_MAX,
+      },
     },
   };
 };
