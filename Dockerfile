@@ -4,7 +4,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts: dependency install scripts never run during the image build
+# (supply-chain hardening; also stops install-time telemetry such as @scarf/scarf).
+RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
@@ -16,7 +18,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 # Install production dependencies, then remove package managers: the app never needs
 # them at runtime, and they are a common source of image vulnerabilities.
-RUN npm ci --omit=dev && npm cache clean --force \
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
      /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn*

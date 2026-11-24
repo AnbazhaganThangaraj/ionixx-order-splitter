@@ -55,14 +55,22 @@ API_KEYS="partner-a:replace-with-a-long-random-key-123456" npm start
 #   -H 'X-API-Key: replace-with-a-long-random-key-123456'
 ```
 
-With `NODE_ENV=production` the app refuses to start unless `API_KEYS` is set.
+In production, configure **hashes** instead of keys, so the keys never sit in config:
+
+```bash
+npm run hash-key -- --generate partner-a   # prints a new key (give to the partner) and its hash
+API_KEY_HASHES="partner-a:<sha256-hex>" NODE_ENV=production npm start
+```
+
+With `NODE_ENV=production` the app refuses to start unless keys are configured.
+See [SECURITY.md](SECURITY.md) for the threat model and key management.
 
 **Run with Docker** (production image, non-root, `NODE_ENV=production`):
 
 ```bash
 docker build -t ionixx-order-splitter .
 docker run --rm -p 3000:3000 \
-  -e API_KEYS="partner-a:replace-with-a-long-random-key-123456" \
+  -e API_KEY_HASHES="partner-a:<sha256-hex>" \
   ionixx-order-splitter
 ```
 
@@ -73,21 +81,23 @@ Interactive API docs (Swagger UI): **http://localhost:3000/docs**
 
 ## Configuration
 
-| Variable                  | Default            | Description                                                                                   |
-| ------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| `PORT`                    | `3000`             | HTTP port                                                                                     |
-| `NODE_ENV`                | `development`      | `development`, `test` or `production`                                                         |
-| `LOG_LEVEL`               | `info`             | pino level (`silent` … `trace`)                                                               |
-| `DEFAULT_STOCK_PRICE`     | `100`              | Price (USD) used when the partner does not send `marketPrice`                                 |
-| `QUANTITY_PRECISION`      | `3`                | Decimal places allowed for share quantities (0–10), e.g. `7`                                  |
-| `MARKET_TIMEZONE`         | `America/New_York` | IANA time zone of the exchange                                                                |
-| `MARKET_OPEN_TIME`        | `09:30`            | Session open, `HH:mm`, in the exchange time zone                                              |
-| `MARKET_CLOSE_TIME`       | `16:00`            | Session close, `HH:mm`, in the exchange time zone (exclusive)                                 |
-| `API_KEYS`                | _(empty)_          | `partnerId:key,partnerId:key` (keys ≥ 24 chars). Empty = auth off; **required in production** |
-| `RATE_LIMIT_MAX`          | `100`              | Max `/api/v1` requests per client IP per window                                               |
-| `RATE_LIMIT_WINDOW_MS`    | `60000`            | Rate-limit window in milliseconds                                                             |
-| `IDEMPOTENCY_TTL_SECONDS` | `86400`            | How long an `Idempotency-Key` response can be replayed                                        |
-| `TRUST_PROXY`             | `0`                | Number of proxies/load balancers in front (0 = ignore `X-Forwarded-For`)                      |
+| Variable                  | Default            | Description                                                                                                                            |
+| ------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | `3000`             | HTTP port                                                                                                                              |
+| `NODE_ENV`                | `development`      | `development`, `test` or `production`                                                                                                  |
+| `LOG_LEVEL`               | `info`             | pino level (`silent` … `trace`)                                                                                                        |
+| `DEFAULT_STOCK_PRICE`     | `100`              | Price (USD) used when the partner does not send `marketPrice`                                                                          |
+| `QUANTITY_PRECISION`      | `3`                | Decimal places allowed for share quantities (0–10), e.g. `7`                                                                           |
+| `MARKET_TIMEZONE`         | `America/New_York` | IANA time zone of the exchange                                                                                                         |
+| `MARKET_OPEN_TIME`        | `09:30`            | Session open, `HH:mm`, in the exchange time zone                                                                                       |
+| `MARKET_CLOSE_TIME`       | `16:00`            | Session close, `HH:mm`, in the exchange time zone (exclusive)                                                                          |
+| `API_KEY_HASHES`          | _(empty)_          | `partnerId:sha256hex,…` — production format (see `npm run hash-key`)                                                                   |
+| `API_KEYS`                | _(empty)_          | `partnerId:key,…` plaintext keys (≥ 24 chars), for local development. With neither set, auth is off; **one is required in production** |
+| `PARTNER_RATE_LIMIT_MAX`  | `600`              | Max `/api/v1` requests per authenticated partner per window                                                                            |
+| `RATE_LIMIT_MAX`          | `100`              | Max `/api/v1` requests per client IP per window                                                                                        |
+| `RATE_LIMIT_WINDOW_MS`    | `60000`            | Rate-limit window in milliseconds                                                                                                      |
+| `IDEMPOTENCY_TTL_SECONDS` | `86400`            | How long an `Idempotency-Key` response can be replayed                                                                                 |
+| `TRUST_PROXY`             | `0`                | Number of proxies/load balancers in front (0 = ignore `X-Forwarded-For`)                                                               |
 
 Configuration is validated on startup. If any value is invalid, the process prints
 every problem and exits with code 1 instead of calculating with bad settings:
@@ -108,22 +118,23 @@ QUANTITY_PRECISION=7 npm start
 
 ## Scripts
 
-| Command                 | What it does                                 |
-| ----------------------- | -------------------------------------------- |
-| `npm run dev`           | Start with auto-reload (tsx watch)           |
-| `npm run build`         | Compile TypeScript to `dist/`                |
-| `npm start`             | Run the compiled app (`node dist/server.js`) |
-| `npm test`              | Run all unit and integration tests           |
-| `npm run test:coverage` | Tests with a coverage report in `coverage/`  |
-| `npm run lint`          | ESLint (strict, type-aware rules)            |
-| `npm run typecheck`     | Type-check source and tests without emitting |
-| `npm run format`        | Format with Prettier                         |
+| Command                 | What it does                                                   |
+| ----------------------- | -------------------------------------------------------------- |
+| `npm run dev`           | Start with auto-reload (tsx watch)                             |
+| `npm run build`         | Compile TypeScript to `dist/`                                  |
+| `npm start`             | Run the compiled app (`node dist/server.js`)                   |
+| `npm test`              | Run all unit and integration tests                             |
+| `npm run test:coverage` | Tests with a coverage report in `coverage/`                    |
+| `npm run lint`          | ESLint (strict, type-aware rules)                              |
+| `npm run typecheck`     | Type-check source and tests without emitting                   |
+| `npm run format`        | Format with Prettier                                           |
+| `npm run hash-key`      | Generate an API key and its hash (`-- --generate <partnerId>`) |
 
 ---
 
 ## API
 
-Base path: `/api/v1`. All bodies are JSON. When `API_KEYS` is set, every `/api/v1`
+Base path: `/api/v1`. All bodies are JSON. When API keys are configured, every `/api/v1`
 request needs an **`X-API-Key`** header, and each partner only ever sees its own orders. **Monetary values, percentages, prices and
 quantities are decimal strings** (e.g. `"100.50"`). JSON numbers are accepted as input
 too, but strings are preferred because JSON numbers are binary floating point.
@@ -313,11 +324,13 @@ Every error has the same shape:
 | 400    | `INVALID_JSON`                    | Body is not valid JSON                                          |
 | 401    | `UNAUTHORIZED`                    | Missing or invalid `X-API-Key` (when auth is enabled)           |
 | 404    | `NOT_FOUND`                       | Unknown order id (or another partner's order) or route          |
+| 405    | `METHOD_NOT_ALLOWED`              | Known route, unsupported method (see the `Allow` header)        |
 | 409    | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Same `Idempotency-Key` is still being processed                 |
 | 413    | `PAYLOAD_TOO_LARGE`               | Body larger than 100 kb                                         |
 | 415    | `UNSUPPORTED_MEDIA_TYPE`          | POST without `Content-Type: application/json`                   |
 | 422    | `IDEMPOTENCY_KEY_REUSED`          | `Idempotency-Key` reused with a different body                  |
-| 429    | `RATE_LIMITED`                    | Too many requests; see the `Retry-After` header                 |
+| 429    | `RATE_LIMITED`                    | Too many requests from this IP; see the `Retry-After` header    |
+| 429    | `PARTNER_QUOTA_EXCEEDED`          | The partner's request quota is used up; see `Retry-After`       |
 | 500    | `INTERNAL_ERROR`                  | Unexpected failure; internal details are logged, never returned |
 
 Every response carries an `X-Request-Id` header. A partner may send its own
@@ -396,37 +409,46 @@ daylight-saving changes. **Public holidays are not considered** (see below).
 
 Every request passes through these layers, in this order (`src/app.ts`):
 
-| #   | Middleware                         | Applies to     | Purpose                                                              |
-| --- | ---------------------------------- | -------------- | -------------------------------------------------------------------- |
-| 1   | `apiSecurityHeaders()` (helmet)    | all            | Strict CSP (`default-src 'none'`), HSTS, `nosniff`, frame protection |
-| 2   | `connectionDrain()`                | all            | Sends `Connection: close` while shutting down                        |
-| 3   | `requestId()`                      | all            | Reuses a safe `X-Request-Id` or creates one; echoed in the response  |
-| 4   | `responseTimeLogger()`             | all            | Monotonic timer; one JSON log line per request with `durationMs`     |
-| 5   | `express.json({ limit: '100kb' })` | all            | JSON parsing with a body-size limit (413)                            |
-| 6   | `recordMountPath()`                | each router    | Keeps the route name correct in logs, including error paths          |
-| 7   | `docsSecurityHeaders()`            | `/docs`        | Looser CSP so Swagger UI can load its own scripts and styles         |
-| 8   | `noStore()`                        | `/api/v1`      | `Cache-Control: no-store` for financial data                         |
-| 9   | `apiRateLimit()`                   | `/api/v1`      | Per-IP limit (429 + `Retry-After`), before auth to slow key guessing |
-| 10  | `apiKeyAuth()`                     | `/api/v1`      | `X-API-Key` check (constant-time), sets the partner id               |
-| 11  | `requireJson()`                    | `POST /orders` | 415 unless the body is JSON                                          |
-| 12  | `idempotency()`                    | `POST /orders` | `Idempotency-Key` replay / conflict handling                         |
-| 13  | `notFound()`                       | unmatched      | 404 in the standard error format                                     |
-| 14  | `errorHandler()`                   | all errors     | One error format; unexpected errors become a generic 500             |
+| #   | Middleware                         | Applies to     | Purpose                                                                      |
+| --- | ---------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| 1   | `apiSecurityHeaders()` (helmet)    | all            | Strict CSP (`default-src 'none'`), HSTS, `nosniff`, frame protection         |
+| 2   | `connectionDrain()`                | all            | Sends `Connection: close` while shutting down                                |
+| 3   | `requestId()`                      | all            | Reuses a safe `X-Request-Id` or creates one; echoed in the response          |
+| 4   | `responseTimeLogger()`             | all            | Monotonic timer; one JSON log line per request with `durationMs`             |
+| 5   | `express.json({ limit: '100kb' })` | all            | JSON parsing with a body-size limit (413)                                    |
+| 6   | `recordMountPath()`                | each router    | Keeps the route name correct in logs, including error paths                  |
+| 7   | `docsSecurityHeaders()`            | `/docs`        | Looser CSP so Swagger UI can load its own scripts and styles                 |
+| 8   | `noStore()`                        | `/api/v1`      | `Cache-Control: no-store` for financial data                                 |
+| 9   | `apiRateLimit()`                   | `/api/v1`      | Per-IP limit (429 + `Retry-After`), before auth to slow key guessing         |
+| 10  | `apiKeyAuth()`                     | `/api/v1`      | `X-API-Key` check against stored hashes (constant-time), sets the partner id |
+| 11  | `partnerRateLimit()`               | `/api/v1`      | Per-partner quota after authentication (429 `PARTNER_QUOTA_EXCEEDED`)        |
+| 12  | `requireJson()`                    | `POST /orders` | 415 unless the body is JSON                                                  |
+| 13  | `idempotency()`                    | `POST /orders` | `Idempotency-Key` replay / conflict handling                                 |
+| 14  | `methodNotAllowed()`               | known paths    | 405 + `Allow` for unsupported methods; `OPTIONS` → 204                       |
+| 15  | `notFound()`                       | unmatched      | 404 in the standard error format                                             |
+| 16  | `errorHandler()`                   | all errors     | One error format; unexpected errors become a generic 500                     |
 
 ### Security controls
 
-- **Authentication:** per-partner API keys (`X-API-Key`), compared as SHA-256 digests
-  with `timingSafeEqual`; several keys per partner for rotation; keys never logged.
+- **Authentication:** per-partner API keys (`X-API-Key`). Only SHA-256 hashes are
+  stored (`API_KEY_HASHES`); comparison with `timingSafeEqual`; several keys per partner
+  for rotation; keys never logged and redacted by the logger as a safety net.
 - **Authorisation:** orders belong to the partner that created them. Another partner's
   order returns 404, not 403, so order ids cannot be probed.
-- **Abuse protection:** rate limiting, 100 kb body limit, strict input validation that
-  rejects unknown fields, server header/request timeouts against slow clients.
+- **Abuse protection:** per-IP rate limit (before auth) and per-partner quota (after
+  auth), 100 kb body limit, strict validation that rejects unknown fields and
+  prototype-pollution payloads, server timeouts against slow clients.
+- **Audit trail:** structured `audit` events for failed authentication, rate limiting,
+  order creation and idempotency replays/conflicts (identifiers only, no amounts).
 - **Headers:** helmet security headers; `x-powered-by` removed; `no-store` caching.
 - **Proxies:** `X-Forwarded-For` is ignored unless `TRUST_PROXY` declares the proxies,
   so the client IP used for rate limiting cannot be spoofed.
 - **Errors:** internals (messages, stacks) are logged, never returned to clients.
 - **CORS:** deliberately not enabled. Clients are partner servers, not browsers, so no
-  cross-origin browser access is granted.
+  cross-origin browser access is granted. Unsupported methods get 405 with `Allow`.
+
+The full threat model (STRIDE), key management and the production backlog are in
+[SECURITY.md](SECURITY.md).
 
 ### Operations
 
@@ -436,10 +458,14 @@ Every request passes through these layers, in this order (`src/app.ts`):
 - **Fail-fast configuration:** invalid settings, or production without API keys, stop
   the process at startup with a clear message.
 - **Container:** multi-stage `Dockerfile`; runtime image has production dependencies
-  only, runs as the unprivileged `node` user, with a `HEALTHCHECK`.
+  only, no package managers (npm/yarn removed), runs as the unprivileged `node` user,
+  with a `HEALTHCHECK`.
 - **CI** (`.github/workflows/ci.yml`): format check, lint, type-check, tests with
-  coverage, build and production-dependency audit on Node 22 and 24, then builds the
-  image and smoke-tests it (startup without keys fails, 401 without a key, a real order).
+  coverage, build and production-dependency audit on Node 22 and 24; builds the image,
+  smoke-tests it (startup without keys fails, 401 without a key, a real order) and scans
+  it with Trivy; gitleaks scans the git history for secrets.
+- **Security automation:** CodeQL static analysis (`codeql.yml`) on every push and weekly;
+  Dependabot updates for npm packages, GitHub Actions and the Docker base image.
 
 ### What this POC still keeps in memory
 
@@ -499,7 +525,7 @@ tests/
 ## Testing
 
 ```bash
-npm test                # 235 tests
+npm test                # 259 tests
 npm run test:coverage   # coverage report in coverage/
 ```
 
@@ -529,8 +555,9 @@ The tests focus on behaviour and edge cases:
   of stored data, empty after "restart".
 - **HTTP** – 201/200/400/404/413/415/500 responses, Location header, response-time log
   lines, request bodies not logged, request-id handling.
-- **Production controls** – authentication (missing/wrong/rotated keys, partner
-  isolation, keys not logged), rate limiting (429, `Retry-After`, auth failures counted),
+- **Production controls** – authentication (missing/wrong/rotated/hashed keys, partner
+  isolation, keys not logged), audit events, rate limiting and partner quotas (429,
+  `Retry-After`, auth failures counted), 405 handling, prototype pollution, log redaction,
   idempotency (replay, key reuse, concurrent retry, failures not stored), security
   headers, proxy trust, readiness while draining.
 
