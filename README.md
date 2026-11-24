@@ -302,36 +302,54 @@ curl -s http://localhost:3000/api/v1/orders/096eecb5-de2f-4469-be10-7490a1c222ac
 
 ### Errors
 
-Every error has the same shape:
+Every error has the same shape. Branch on `code` (stable); `message` and `details`
+are written for the developer reading them and say what was wrong and how to fix it:
 
 ```json
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "Request validation failed",
+    "message": "Request validation failed: 3 problems found (see details)",
     "details": [
-      { "path": "portfolio", "message": "allocations must add up to exactly 100 (got 90)" },
-      { "path": "portfolio[1].marketPrice", "message": "must be greater than 0" }
+      { "path": "orderType", "message": "is required (one of BUY, SELL)" },
+      {
+        "path": "portfolio",
+        "message": "allocations must add up to exactly 100 (got 90, 10 short)"
+      },
+      {
+        "path": "portfolio[0]",
+        "message": "unknown field(s): markePrice; allowed fields: symbol, allocation, marketPrice"
+      }
     ]
   },
   "requestId": "6f1c8d2e-0b7a-4f3e-9c41-2d5e8a7b9c10"
 }
 ```
 
-| Status | `code`                            | When                                                            |
-| ------ | --------------------------------- | --------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`                | Any rule above fails (all problems are listed at once)          |
-| 400    | `INVALID_JSON`                    | Body is not valid JSON                                          |
-| 401    | `UNAUTHORIZED`                    | Missing or invalid `X-API-Key` (when auth is enabled)           |
-| 404    | `NOT_FOUND`                       | Unknown order id (or another partner's order) or route          |
-| 405    | `METHOD_NOT_ALLOWED`              | Known route, unsupported method (see the `Allow` header)        |
-| 409    | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Same `Idempotency-Key` is still being processed                 |
-| 413    | `PAYLOAD_TOO_LARGE`               | Body larger than 100 kb                                         |
-| 415    | `UNSUPPORTED_MEDIA_TYPE`          | POST without `Content-Type: application/json`                   |
-| 422    | `IDEMPOTENCY_KEY_REUSED`          | `Idempotency-Key` reused with a different body                  |
-| 429    | `RATE_LIMITED`                    | Too many requests from this IP; see the `Retry-After` header    |
-| 429    | `PARTNER_QUOTA_EXCEEDED`          | The partner's request quota is used up; see `Retry-After`       |
-| 500    | `INTERNAL_ERROR`                  | Unexpected failure; internal details are logged, never returned |
+| Status | `code`                            | When                                                      | Example message                                                                           |
+| ------ | --------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`                | A field, query parameter or path parameter is invalid     | `Request validation failed: 2 problems found (see details)`                               |
+| 400    | `INVALID_JSON`                    | Body is not valid JSON (details give the position)        | `Request body is not valid JSON; send a JSON object`                                      |
+| 400    | `BAD_REQUEST`                     | Body cannot be read, e.g. a corrupt gzip/br body          | `Request body could not be read: Decompression failed`                                    |
+| 401    | `UNAUTHORIZED`                    | API key missing or wrong (when auth is enabled)           | `API key is missing: send your key in the X-API-Key header`                               |
+| 404    | `NOT_FOUND`                       | Unknown order id (or another partner's), or unknown route | `Order 3f2b… not found`                                                                   |
+| 405    | `METHOD_NOT_ALLOWED`              | Known route, unsupported method (`Allow` header is set)   | `Method DELETE is not allowed on /api/v1/orders; allowed: GET, POST, HEAD, OPTIONS`       |
+| 409    | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Same `Idempotency-Key` is still being processed           | `A request with this Idempotency-Key is still being processed; retry shortly`             |
+| 413    | `PAYLOAD_TOO_LARGE`               | Body larger than 100 kb                                   | `Request body is too large (limit 100kb)`                                                 |
+| 415    | `UNSUPPORTED_MEDIA_TYPE`          | Not JSON, or unsupported charset / `Content-Encoding`     | `Content-Type must be application/json (got "text/plain")`                                |
+| 422    | `IDEMPOTENCY_KEY_REUSED`          | `Idempotency-Key` reused with a different body            | `…; use a new key for a new request, or resend the original body…`                        |
+| 429    | `RATE_LIMITED`                    | Too many requests from this IP (`Retry-After` is set)     | `Too many requests from this IP address (limit 100 per 1 min); retry in 42 s`             |
+| 429    | `PARTNER_QUOTA_EXCEEDED`          | The partner's quota is used up (`Retry-After` is set)     | `Partner request quota exceeded (limit 600 per 1 min); retry in 42 s`                     |
+| 500    | `INTERNAL_ERROR`                  | Unexpected failure; details are logged, never returned    | `An unexpected error occurred. Please retry later; … contact support with the requestId.` |
+
+The full list of codes lives in `src/errors/error-codes.ts`; the OpenAPI document and
+the contract tests use it, so an undocumented code cannot reach a client.
+
+**Failures outside a request** are handled too: an unhandled promise rejection or
+uncaught exception is logged as a structured `fatal` line (with stack), readiness turns
+503, connections drain for up to 3 s and the process exits with code 1 so the
+orchestrator restarts it. If the port is already in use, startup fails with a clear
+`fatal` message and exit code 1.
 
 Every response carries an `X-Request-Id` header. A partner may send its own
 `X-Request-Id` (letters, digits, `.`, `_`, `-`, up to 64 characters) and it is echoed
@@ -525,7 +543,7 @@ tests/
 ## Testing
 
 ```bash
-npm test                # 259 tests
+npm test                # 318 tests
 npm run test:coverage   # coverage report in coverage/
 ```
 
@@ -555,6 +573,17 @@ The tests focus on behaviour and edge cases:
   of stored data, empty after "restart".
 - **HTTP** – 201/200/400/404/413/415/500 responses, Location header, response-time log
   lines, request bodies not logged, request-id handling.
+- **Error messages** (`tests/integration/error-messages.test.ts`) – the exact status,
+  code and guidance for every failure case: malformed/empty/oversized bodies, wrong
+  content type, charset and encoding, each field rule, unknown fields, auth, 404/405,
+  rate limits and idempotency conflicts; client errors never become 500s.
+- **API contract** (`tests/contract/`) – real responses are validated against the
+  OpenAPI document with ajv. The suite fails if a response doesn't match its schema,
+  uses an undocumented status, if any documented response is never exercised, or if any
+  error code in the catalogue is never produced.
+- **Process level** (`tests/e2e/`) – the real server is started as a child process:
+  graceful SIGTERM (exit 0), port already in use, invalid configuration and production
+  without keys (exit 1). Fatal-error handlers are unit tested.
 - **Production controls** – authentication (missing/wrong/rotated/hashed keys, partner
   isolation, keys not logged), audit events, rate limiting and partner quotas (429,
   `Retry-After`, auth failures counted), 405 handling, prototype pollution, log redaction,
