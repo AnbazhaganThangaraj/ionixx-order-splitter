@@ -92,7 +92,7 @@ describe('OrderCalculator', () => {
     const result = calculator().calculate(
       command({
         orderType: 'BUY',
-        totalAmount: '1',
+        totalAmount: '2',
         portfolio: [
           { symbol: 'AAPL', allocation: '99.5' },
           { symbol: 'TINY', allocation: '0.5', marketPrice: '5000' },

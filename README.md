@@ -387,9 +387,12 @@ coloured, human-readable logs during development: `npm run dev | npx pino-pretty
 ## Business rules
 
 **1. Amount per stock.** `allocatedAmount = totalAmount × allocation ÷ 100`, in whole
-cents. Every line except the last is rounded **down** to cents and the last line takes
-whatever is left, so the lines always add up **exactly** to `totalAmount`.
-Example: USD 100 at 33.3333 / 33.3333 / 33.3334 → 33.33 + 33.33 + 33.34.
+cents, using the **largest-remainder method**: every line is rounded **down** to cents,
+then the few cents left over go one at a time to the lines that lost the most to rounding
+(ties go to the earlier line). The lines always add up **exactly** to `totalAmount`, and
+every line is within one cent of its exact share.
+Examples: USD 100 at 33.3333 / 33.3333 / 33.3334 → 33.33 + 33.33 + 33.34;
+USD 199.99 over 100 stocks at 1% → 2.00 for 99 stocks and 1.99 for one.
 
 **2. Price.** The partner's `marketPrice` if sent, otherwise `DEFAULT_STOCK_PRICE`
 (USD 100). An invalid partner price (zero, negative, malformed) is **rejected**, never
