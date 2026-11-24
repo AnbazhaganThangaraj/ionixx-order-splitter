@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -21,7 +21,8 @@ const PORT = Number(process.env.PERF_PORT ?? 3900);
 const BASE = `http://127.0.0.1:${PORT}`;
 const CONNECTIONS = Number(process.env.PERF_CONNECTIONS ?? 50);
 const DURATION = Number(process.env.PERF_DURATION ?? 8);
-const API_KEY = 'perf-test-key-0123456789abcdefghij';
+// A fresh random key per run: no credential is hard-coded in the repository.
+const API_KEY = randomBytes(32).toString('base64url');
 const OUTPUT = process.env.PERF_OUTPUT ?? 'latest.json';
 
 interface PortfolioItem {
