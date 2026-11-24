@@ -26,8 +26,10 @@ const routeOf = (req: Request, locals: Record<string, unknown>): string => {
     const routePath = route.path === '/' ? '' : route.path;
     return `${mountPath}${routePath}` || '/';
   }
-  // Unmatched routes: log a bounded path so log labels cannot grow without limit.
-  return truncate(req.path, 100);
+  // No named route (unmatched paths, static Swagger UI files): log the full original
+  // path, without the query string, truncated so log labels cannot grow without limit.
+  // (req.path is relative to the current router, e.g. "/" inside /docs.)
+  return truncate(req.originalUrl.split('?')[0] ?? req.path, 100);
 };
 
 /**

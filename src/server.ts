@@ -29,6 +29,11 @@ const start = (): void => {
     if (error instanceof ConfigError) {
       // Logger is configured from config, so report config problems directly.
       console.error(error.message);
+      console.error(
+        '\nSettings are read from environment variables or a .env file. For local development:\n' +
+          '  cp .env.example .env\n' +
+          'All settings are described in docs/CONFIGURATION.md.',
+      );
       process.exit(1);
     }
     throw error;

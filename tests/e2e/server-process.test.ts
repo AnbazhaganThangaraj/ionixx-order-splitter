@@ -100,6 +100,7 @@ describe('server process', () => {
     const server = startServer({ PORT: '0', AUTH_DISABLED: '' });
     expect(await server.exited).toBe(1);
     expect(server.output()).toContain('no API keys configured');
+    expect(server.output()).toContain('cp .env.example .env');
   });
 
   it('refuses to start in production without API keys', async () => {

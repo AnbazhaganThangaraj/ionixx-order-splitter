@@ -164,7 +164,8 @@ const envSchema = z
         message:
           env.NODE_ENV === 'production'
             ? 'API_KEY_HASHES (or API_KEYS) is required when NODE_ENV=production (authentication cannot be disabled)'
-            : 'no API keys configured: set API_KEY_HASHES (or API_KEYS), or AUTH_DISABLED=true for local development only',
+            : 'no API keys configured: set API_KEY_HASHES (or API_KEYS), or AUTH_DISABLED=true for local development only ' +
+              '(quick start: cp .env.example .env)',
       });
     }
   });

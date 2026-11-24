@@ -33,4 +33,10 @@ describe('API docs', () => {
     expect(response.status).toBe(200);
     expect(response.text).toMatch(/swagger-ui/i);
   });
+
+  it('logs the real path for Swagger UI requests, not the router-relative "/"', async () => {
+    const { app: docsApp, logs } = buildTestApp();
+    await request(docsApp).get('/docs/');
+    expect(logs.find((l) => typeof l.route === 'string')?.route).toBe('/docs/');
+  });
 });
