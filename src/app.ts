@@ -73,7 +73,9 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
   app.use(connectionDrain(lifecycle));
   app.use(requestId());
   app.use(responseTimeLogger(logger));
-  app.use(express.json({ limit: '100kb' }));
+  // No global body parser: request bodies are parsed only on routes that accept them,
+  // AFTER rate limiting and authentication (see order.routes.ts), so anonymous or
+  // throttled clients cannot make the server buffer and parse bodies.
 
   app.use('/health', recordMountPath(), createHealthRouter(lifecycle));
   app.use('/docs', recordMountPath(), docsSecurityHeaders(), createDocsRouter(config));

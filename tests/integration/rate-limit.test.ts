@@ -69,3 +69,40 @@ describe('Per-partner quota', () => {
     expect(response.headers['ratelimit-policy']).toMatch(/"partner"/);
   });
 });
+
+describe('Body parsing happens after rate limiting and authentication', () => {
+  const KEY = 'key-for-partner-a-0123456789abcdef';
+
+  it('unauthenticated malformed bodies get 401 (not 400) and count towards the IP limit', async () => {
+    const { app, logs } = buildTestApp({ API_KEYS: `a:${KEY}`, RATE_LIMIT_MAX: '2' });
+    const sendBroken = () =>
+      request(app).post('/api/v1/orders').set('Content-Type', 'application/json').send('{bad');
+
+    const first = await sendBroken();
+    const second = await sendBroken();
+    const third = await sendBroken();
+
+    expect([first.status, second.status]).toEqual([401, 401]);
+    expect(third.status).toBe(429);
+    expect(logs.filter((l) => l.event === 'auth.failed')).toHaveLength(2);
+  });
+
+  it('unauthenticated oversized bodies are rejected with 401 before being parsed', async () => {
+    const { app } = buildTestApp({ API_KEYS: `a:${KEY}` });
+    const response = await request(app)
+      .post('/api/v1/orders')
+      .send({ padding: 'x'.repeat(200_000) });
+    expect(response.status).toBe(401);
+  });
+
+  it('authenticated callers still get precise body errors', async () => {
+    const { app } = buildTestApp({ API_KEYS: `a:${KEY}` });
+    const response = await request(app)
+      .post('/api/v1/orders')
+      .set('X-API-Key', KEY)
+      .set('Content-Type', 'application/json')
+      .send('{bad');
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_JSON');
+  });
+});
