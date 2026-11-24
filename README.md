@@ -8,14 +8,15 @@ shares** for each stock, **when** the orders should execute (markets open Monday
 and the **history** of orders. Node.js + TypeScript + Express; data lives in memory and does
 not survive a restart, as the brief requires.
 
-| Document                                       | Contents                                                   |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| [docs/API.md](docs/API.md)                     | Full API reference: fields, responses, idempotency, errors |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, authentication setup           |
-| [docs/PRODUCTION.md](docs/PRODUCTION.md)       | Middleware pipeline, security and operational controls, CI |
-| [SECURITY.md](SECURITY.md)                     | Threat model (STRIDE), API key management, audit events    |
-| [docs/TESTING.md](docs/TESTING.md)             | Test layers and coverage                                   |
-| [docs/PERFORMANCE.md](docs/PERFORMANCE.md)     | Load-test method, results and findings                     |
+| Document                                       | Contents                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)   | HLD and LLD diagrams: context, layers, request pipeline, sequence, classes |
+| [docs/API.md](docs/API.md)                     | Full API reference: fields, responses, idempotency, errors                 |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, authentication setup                           |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md)       | Middleware pipeline, security and operational controls, CI                 |
+| [SECURITY.md](SECURITY.md)                     | Threat model (STRIDE), API key management, audit events                    |
+| [docs/TESTING.md](docs/TESTING.md)             | Test layers and coverage                                                   |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md)     | Load-test method, results and findings                                     |
 
 ## Quick start
 
@@ -165,6 +166,7 @@ Concrete implementations, the clock, id generator and logger are wired in one pl
 (`src/app.ts`), so a database or an exchange calendar can replace the POC versions and
 tests can fix the time. Business failures are domain errors (`src/domain/errors.ts`)
 mapped to HTTP only at the edge.
+Diagrams (HLD and LLD) are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```text
 src/  app.ts (composition root) · server.ts (startup, shutdown, fatal errors)
