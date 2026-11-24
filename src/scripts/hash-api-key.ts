@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { hashApiKey } from '../config/app.config';
+import { hashApiKey } from '../lib/crypto';
 
 /**
  * Generates partner API keys and their SHA-256 hashes for API_KEY_HASHES.

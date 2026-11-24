@@ -4,6 +4,7 @@ import { idempotency } from '../middlewares/idempotency.middleware';
 import { methodNotAllowed } from '../middlewares/method-not-allowed.middleware';
 import { requireJson } from '../middlewares/require-json.middleware';
 import type { AuditLog } from '../lib/audit';
+import type { Logger } from '../lib/logger';
 import type { IdempotencyStore } from '../repositories/idempotency.store';
 import { JSON_BODY_LIMIT } from '../lib/http-limits';
 
@@ -11,6 +12,7 @@ export const createOrderRouter = (
   controller: OrderController,
   idempotencyStore: IdempotencyStore,
   audit: AuditLog,
+  logger: Logger,
 ): Router => {
   const router = Router();
 
@@ -20,7 +22,7 @@ export const createOrderRouter = (
     '/',
     requireJson(),
     express.json({ limit: JSON_BODY_LIMIT }),
-    idempotency(idempotencyStore, audit),
+    idempotency(idempotencyStore, audit, logger),
     controller.create,
   );
   router.get('/', controller.list);

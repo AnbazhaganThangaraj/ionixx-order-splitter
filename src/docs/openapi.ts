@@ -1,5 +1,15 @@
 import type { AppConfig } from '../config/app.config';
+import {
+  EXECUTION_REASONS,
+  ORDER_STATUSES,
+  ORDER_TYPES,
+  PRICE_SOURCES,
+  SUPPORTED_CURRENCIES,
+} from '../domain/order.enums';
 import { ERROR_CODES } from '../errors/error-codes';
+import { JSON_BODY_LIMIT } from '../lib/http-limits';
+import { IDEMPOTENCY_KEY_PATTERN } from '../middlewares/idempotency.middleware';
+import { ORDER_LIMITS } from '../validators/order.validator';
 
 const decimalString = (description: string, example: string): Record<string, unknown> => ({
   oneOf: [{ type: 'string', pattern: '^\\d+(\\.\\d+)?$' }, { type: 'number' }],
@@ -42,7 +52,8 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         ? 'Authentication: send your partner API key in the X-API-Key header.'
         : 'Authentication is DISABLED on this instance (development mode).'),
   },
-  servers: [{ url: `http://localhost:${config.port}` }],
+  // Relative, so the document is correct wherever the service is deployed.
+  servers: [{ url: '/' }],
   tags: [{ name: 'Orders' }, { name: 'Health' }],
   paths: {
     '/api/v1/orders': {
@@ -59,7 +70,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
               'Optional. Retrying with the same key and body replays the original response ' +
               'instead of creating a second order. Scoped per partner, kept for ' +
               `${config.idempotency.ttlSeconds} seconds.`,
-            schema: { type: 'string', pattern: '^[A-Za-z0-9._:-]{1,255}$' },
+            schema: { type: 'string', pattern: IDEMPOTENCY_KEY_PATTERN },
           },
         ],
         requestBody: {
@@ -114,7 +125,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             'A request with this Idempotency-Key is still being processed',
             'IDEMPOTENCY_REQUEST_IN_PROGRESS',
           ),
-          '413': errorResponse('Body larger than 100kb', 'PAYLOAD_TOO_LARGE'),
+          '413': errorResponse(`Body larger than ${JSON_BODY_LIMIT}`, 'PAYLOAD_TOO_LARGE'),
           '415': errorResponse('Content-Type is not application/json', 'UNSUPPORTED_MEDIA_TYPE'),
           '422': errorResponse(
             'The order would not trade anything (ORDER_NOT_EXECUTABLE: every line rounds ' +
@@ -122,7 +133,11 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
               '(IDEMPOTENCY_KEY_REUSED)',
             'ORDER_NOT_EXECUTABLE',
           ),
-          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
+          '429': errorResponse(
+            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
+              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
+            'RATE_LIMITED',
+          ),
           '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
@@ -134,10 +149,15 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           {
             name: 'limit',
             in: 'query',
-            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            schema: {
+              type: 'integer',
+              minimum: 1,
+              maximum: ORDER_LIMITS.maxPageSize,
+              default: ORDER_LIMITS.defaultPageSize,
+            },
           },
           { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0, default: 0 } },
-          { name: 'orderType', in: 'query', schema: { type: 'string', enum: ['BUY', 'SELL'] } },
+          { name: 'orderType', in: 'query', schema: { type: 'string', enum: [...ORDER_TYPES] } },
         ],
         responses: {
           '200': {
@@ -146,7 +166,11 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           },
           '400': errorResponse('Invalid query parameters', 'VALIDATION_ERROR'),
           '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
-          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
+          '429': errorResponse(
+            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
+              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
+            'RATE_LIMITED',
+          ),
           '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
@@ -172,7 +196,11 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           '400': errorResponse('orderId is not a UUID', 'VALIDATION_ERROR'),
           '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
           '404': errorResponse('No order with this id for your partner account', 'NOT_FOUND'),
-          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
+          '429': errorResponse(
+            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
+              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
+            'RATE_LIMITED',
+          ),
           '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
@@ -222,13 +250,13 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         additionalProperties: false,
         required: ['orderType', 'totalAmount', 'portfolio'],
         properties: {
-          orderType: { type: 'string', enum: ['BUY', 'SELL'] },
+          orderType: { type: 'string', enum: [...ORDER_TYPES] },
           totalAmount: decimalString('Amount to buy or sell, > 0, max 2 decimal places.', '100.00'),
-          currency: { type: 'string', enum: ['USD'], default: 'USD' },
+          currency: { type: 'string', enum: [...SUPPORTED_CURRENCIES], default: 'USD' },
           portfolio: {
             type: 'array',
             minItems: 1,
-            maxItems: 100,
+            maxItems: ORDER_LIMITS.maxPortfolioSize,
             description: 'Allocations must add up to exactly 100. Symbols must be unique.',
             items: { $ref: '#/components/schemas/PortfolioItem' },
           },
@@ -272,7 +300,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           allocationPercent: { type: 'string', pattern: DECIMAL, example: '60' },
           allocatedAmount: { type: 'string', pattern: MONEY, example: '60.00' },
           price: { type: 'string', pattern: DECIMAL, example: '100.00' },
-          priceSource: { type: 'string', enum: ['PARTNER', 'DEFAULT'] },
+          priceSource: { type: 'string', enum: [...PRICE_SOURCES] },
           quantity: {
             type: 'string',
             pattern: DECIMAL,
@@ -313,9 +341,9 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         properties: {
           orderId: { type: 'string', format: 'uuid' },
           partnerId: { type: 'string', example: 'partner-a' },
-          orderType: { type: 'string', enum: ['BUY', 'SELL'] },
-          status: { type: 'string', enum: ['SCHEDULED'] },
-          currency: { type: 'string', enum: ['USD'] },
+          orderType: { type: 'string', enum: [...ORDER_TYPES] },
+          status: { type: 'string', enum: [...ORDER_STATUSES] },
+          currency: { type: 'string', enum: [...SUPPORTED_CURRENCIES] },
           totalAmount: { type: 'string', pattern: MONEY, example: '100.00' },
           quantityPrecision: { type: 'integer', minimum: 0, maximum: 10, example: 3 },
           lines: {
@@ -346,7 +374,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
               timeZone: { type: 'string', example: 'America/New_York' },
               reason: {
                 type: 'string',
-                enum: ['MARKET_OPEN', 'BEFORE_MARKET_OPEN', 'AFTER_MARKET_CLOSE', 'WEEKEND'],
+                enum: [...EXECUTION_REASONS],
               },
             },
           },
@@ -365,7 +393,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             additionalProperties: false,
             required: ['limit', 'offset', 'total'],
             properties: {
-              limit: { type: 'integer', minimum: 1, maximum: 100 },
+              limit: { type: 'integer', minimum: 1, maximum: ORDER_LIMITS.maxPageSize },
               offset: { type: 'integer', minimum: 0 },
               total: { type: 'integer', minimum: 0 },
             },

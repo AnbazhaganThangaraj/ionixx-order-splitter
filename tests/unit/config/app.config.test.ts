@@ -1,4 +1,5 @@
-import { ConfigError, hashApiKey, loadConfig } from '../../../src/config/app.config';
+import { ConfigError, loadConfig } from '../../../src/config/app.config';
+import { hashApiKey } from '../../../src/lib/crypto';
 
 describe('loadConfig', () => {
   it('applies safe defaults when nothing is set', () => {

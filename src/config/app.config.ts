@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { hashApiKey } from '../lib/crypto';
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 const POSITIVE_DECIMAL = /^(?!0+(\.0+)?$)\d+(\.\d+)?$/;
@@ -22,9 +22,6 @@ export interface ApiKeyEntry {
   /** SHA-256 of the API key, hex. Plaintext keys are hashed at load and then discarded. */
   readonly keyHash: string;
 }
-
-export const hashApiKey = (key: string): string =>
-  createHash('sha256').update(key, 'utf8').digest('hex');
 
 /**
  * Parses "partnerId:value,partnerId:value". Each partner may hold several keys

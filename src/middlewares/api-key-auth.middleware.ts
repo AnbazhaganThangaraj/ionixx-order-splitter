@@ -1,16 +1,15 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import type { ApiKeyEntry } from '../config/app.config';
 import { AppError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
+import { sha256 } from '../lib/crypto';
 import { getRequestId } from '../lib/request-context';
 
 export const API_KEY_HEADER = 'x-api-key';
 
 /** Partner id used for every request when authentication is disabled (local development). */
 export const ANONYMOUS_PARTNER = 'anonymous';
-
-const sha256 = (value: string): Buffer => createHash('sha256').update(value, 'utf8').digest();
 
 /**
  * Authenticates partners by the X-API-Key header and puts their id in res.locals.

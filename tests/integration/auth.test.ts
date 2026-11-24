@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { hashApiKey } from '../../src/config/app.config';
+import { hashApiKey } from '../../src/lib/crypto';
 import { briefExampleRequest } from '../fixtures/orders';
 import { buildTestApp } from '../helpers/test-app';
 

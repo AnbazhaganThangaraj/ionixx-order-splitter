@@ -133,6 +133,27 @@ describe('Idempotency-Key', () => {
     expect((await request(app).get(ORDERS)).body.pagination.total).toBe(2);
   });
 
+  it('logs (and survives) a failing idempotency store after the response is sent', async () => {
+    const failingStore = {
+      begin: () => Promise.resolve({ kind: 'started' as const }),
+      complete: () => Promise.reject(new Error('store unavailable')),
+      release: () => Promise.reject(new Error('store unavailable')),
+    };
+    const { app, logs } = buildTestApp({}, { idempotencyStore: failingStore });
+
+    const response = await request(app)
+      .post(ORDERS)
+      .set('Idempotency-Key', 'k-fail')
+      .send(briefExampleRequest);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(201);
+    expect(logs.find((l) => l.msg === 'Idempotency store update failed')).toMatchObject({
+      idempotencyKey: 'k-fail',
+      partnerId: 'anonymous',
+    });
+  });
+
   it('rejects a malformed key', async () => {
     const { app } = buildTestApp();
     const response = await request(app)

@@ -84,7 +84,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     apiRateLimit(config.http.rateLimit, audit),
     apiKeyAuth(config.auth.apiKeys, audit),
     partnerRateLimit(config.http.rateLimit, audit),
-    createOrderRouter(new OrderController(orderService), idempotencyStore, audit),
+    createOrderRouter(new OrderController(orderService), idempotencyStore, audit, logger),
   );
 
   app.use(notFound());

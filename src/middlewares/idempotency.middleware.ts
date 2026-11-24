@@ -1,24 +1,17 @@
-import { getPartnerId, getRequestId } from '../lib/request-context';
-import { createHash } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { AppError, ValidationError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
+import { onResponseSettled } from '../lib/capture-response';
+import { sha256Hex } from '../lib/crypto';
+import type { Logger } from '../lib/logger';
+import { getPartnerId, getRequestId } from '../lib/request-context';
+import { stableStringify } from '../lib/stable-json';
 import type { IdempotencyStore } from '../repositories/idempotency.store';
 
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
-const SAFE_KEY = /^[A-Za-z0-9._:-]{1,255}$/;
-
-/** JSON with object keys sorted, so {"a":1,"b":2} and {"b":2,"a":1} hash the same. */
-const stableStringify = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`);
-    return `{${entries.join(',')}}`;
-  }
-  return JSON.stringify(value === undefined ? null : value);
-};
+/** Accepted key format; also published in the OpenAPI document. */
+export const IDEMPOTENCY_KEY_PATTERN = '^[A-Za-z0-9._:-]{1,255}$';
+const SAFE_KEY = new RegExp(IDEMPOTENCY_KEY_PATTERN);
 
 /**
  * Optional Idempotency-Key support for POST requests (same idea as Stripe's API):
@@ -29,10 +22,11 @@ const stableStringify = (value: unknown): string => {
  * - retry while the first is still running -> 409 IDEMPOTENCY_REQUEST_IN_PROGRESS
  * - non-2xx outcomes are not stored, so a corrected request can reuse the key
  *
- * Keys are scoped per partner, so two partners can never collide.
+ * Keys are scoped per partner, so two partners can never collide. Body hashing and
+ * response capture live in lib/; this middleware only applies the policy.
  */
 export const idempotency =
-  (store: IdempotencyStore, audit: AuditLog): RequestHandler =>
+  (store: IdempotencyStore, audit: AuditLog, logger: Logger): RequestHandler =>
   async (req, res, next) => {
     const key = req.get(IDEMPOTENCY_HEADER);
     if (key === undefined) {
@@ -49,18 +43,14 @@ export const idempotency =
       ]);
     }
 
-    const scope = `${getPartnerId(res.locals)}:${key}`;
-    const requestHash = createHash('sha256').update(stableStringify(req.body)).digest('hex');
-    const result = await store.begin(scope, requestHash);
-    const auditDetails = {
-      requestId: getRequestId(res.locals),
-      partnerId: getPartnerId(res.locals),
-      idempotencyKey: key,
-    };
+    const partnerId = getPartnerId(res.locals);
+    const context = { requestId: getRequestId(res.locals), partnerId, idempotencyKey: key };
+    const scope = `${partnerId}:${key}`;
+    const result = await store.begin(scope, sha256Hex(stableStringify(req.body)));
 
     switch (result.kind) {
       case 'mismatch':
-        audit.record('idempotency.conflict', { ...auditDetails, reason: 'different_body' });
+        audit.record('idempotency.conflict', { ...context, reason: 'different_body' });
         throw new AppError(
           422,
           'IDEMPOTENCY_KEY_REUSED',
@@ -68,7 +58,7 @@ export const idempotency =
             'use a new key for a new request, or resend the original body to get the original response',
         );
       case 'in-progress':
-        audit.record('idempotency.conflict', { ...auditDetails, reason: 'in_progress' });
+        audit.record('idempotency.conflict', { ...context, reason: 'in_progress' });
         throw new AppError(
           409,
           'IDEMPOTENCY_REQUEST_IN_PROGRESS',
@@ -76,7 +66,7 @@ export const idempotency =
         );
       case 'replay': {
         const { statusCode, body, location } = result.response;
-        audit.record('idempotency.replayed', auditDetails);
+        audit.record('idempotency.replayed', context);
         res.setHeader('Idempotent-Replayed', 'true');
         if (location !== undefined) res.setHeader('Location', location);
         res.status(statusCode).json(body);
@@ -86,30 +76,16 @@ export const idempotency =
         break;
     }
 
-    let responseBody: unknown;
-    const originalJson = res.json.bind(res);
-    res.json = (body: unknown) => {
-      responseBody = body;
-      return originalJson(body);
-    };
-
-    let settled = false;
-    const settle = (): void => {
-      if (settled) return;
-      settled = true;
-      const succeeded = res.writableFinished && res.statusCode >= 200 && res.statusCode < 300;
-      const location = res.getHeader('Location');
+    onResponseSettled(res, ({ succeeded, statusCode, body, location }) => {
       const done = succeeded
-        ? store.complete(scope, {
-            statusCode: res.statusCode,
-            body: responseBody,
-            location: typeof location === 'string' ? location : undefined,
-          })
+        ? store.complete(scope, { statusCode, body, location })
         : store.release(scope);
-      done.catch(() => undefined);
-    };
-    res.on('finish', settle);
-    res.on('close', settle);
+      // The response has already been sent; a store failure must not crash the request,
+      // but it must not be silent either (idempotency would quietly stop working).
+      done.catch((error: unknown) => {
+        logger.warn({ err: error, ...context }, 'Idempotency store update failed');
+      });
+    });
 
     next();
   };
