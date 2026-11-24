@@ -3,8 +3,23 @@ import { createApp } from './app';
 import { ConfigError, loadConfig } from './config/app.config';
 import { AppLifecycle } from './lib/lifecycle';
 import { createLogger } from './lib/logger';
+import { registerProcessHandlers } from './lib/process-handlers';
 
+/** Time allowed for in-flight requests to finish on SIGTERM/SIGINT. */
 const SHUTDOWN_GRACE_MS = 10_000;
+/** After an uncaught error the state is suspect: drain briefly, then exit. */
+const FATAL_GRACE_MS = 3_000;
+
+const describeListenError = (error: NodeJS.ErrnoException, port: number): string => {
+  switch (error.code) {
+    case 'EADDRINUSE':
+      return `port ${port} is already in use (is another instance running?)`;
+    case 'EACCES':
+      return `permission denied to listen on port ${port}`;
+    default:
+      return error.message;
+  }
+};
 
 const start = (): void => {
   let config;
@@ -37,7 +52,15 @@ const start = (): void => {
   const lifecycle = new AppLifecycle();
   const app = createApp(config, { logger, lifecycle });
 
-  const server = app.listen(config.port, () => {
+  // Express 5 passes listen failures (e.g. port in use) to this callback.
+  const server = app.listen(config.port, (error?: Error) => {
+    if (error) {
+      logger.fatal(
+        { err: error },
+        `Could not start the server: ${describeListenError(error as NodeJS.ErrnoException, config.port)}`,
+      );
+      process.exit(1);
+    }
     logger.info(
       {
         port: config.port,
@@ -61,26 +84,34 @@ const start = (): void => {
    * Graceful shutdown: fail readiness so no new traffic arrives, stop accepting
    * connections, let in-flight requests finish, then exit. Force-exit after a grace period.
    */
-  const shutdown = (signal: string): void => {
+  const shutdown = (reason: string, exitCode: 0 | 1, graceMs: number): void => {
     if (lifecycle.isDraining) return;
     lifecycle.startDraining();
-    logger.info({ signal }, 'Shutting down: draining connections');
+    logger.info({ reason }, 'Shutting down: draining connections');
 
-    server.close((error) => {
+    server.close(() => {
       logger.info('HTTP server closed');
-      process.exit(error ? 1 : 0);
+      process.exit(exitCode);
     });
     server.closeIdleConnections();
     setTimeout(() => {
       logger.warn('Grace period elapsed; forcing exit');
-      process.exit(1);
-    }, SHUTDOWN_GRACE_MS).unref();
+      process.exit(exitCode === 0 ? 1 : exitCode);
+    }, graceMs).unref();
   };
+
   process.on('SIGTERM', () => {
-    shutdown('SIGTERM');
+    shutdown('SIGTERM', 0, SHUTDOWN_GRACE_MS);
   });
   process.on('SIGINT', () => {
-    shutdown('SIGINT');
+    shutdown('SIGINT', 0, SHUTDOWN_GRACE_MS);
+  });
+  registerProcessHandlers(process, logger, (reason) => {
+    if (lifecycle.isDraining) {
+      // Already shutting down (e.g. a second fatal error): exit now.
+      process.exit(1);
+    }
+    shutdown(reason, 1, FATAL_GRACE_MS);
   });
 };
 
