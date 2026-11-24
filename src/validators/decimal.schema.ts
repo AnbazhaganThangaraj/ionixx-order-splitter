@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { quote } from '../errors/app-error';
 import { Decimal } from '../lib/decimal';
 
 /** Plain non-negative decimal: digits, optional fraction. No signs, exponents, commas or spaces. */
@@ -22,7 +23,7 @@ export const positiveDecimal = ({
 }: DecimalFieldOptions): z.ZodPipe<z.ZodUnknown, z.ZodTransform<Decimal>> =>
   z.unknown().transform((value, ctx): Decimal => {
     if (value === undefined || value === null) {
-      ctx.addIssue({ code: 'custom', message: 'is required' });
+      ctx.addIssue({ code: 'custom', message: 'is required (a decimal string such as "100.50")' });
       return z.NEVER;
     }
 
@@ -32,15 +33,23 @@ export const positiveDecimal = ({
     } else if (typeof value === 'number' && Number.isFinite(value)) {
       text = String(value);
     } else {
-      ctx.addIssue({ code: 'custom', message: 'must be a decimal string such as "100.50"' });
+      ctx.addIssue({
+        code: 'custom',
+        message: `must be a decimal string such as "100.50" (got ${
+          typeof value === 'number'
+            ? 'a non-finite number'
+            : Array.isArray(value)
+              ? 'an array'
+              : typeof value
+        })`,
+      });
       return z.NEVER;
     }
 
     if (!DECIMAL_PATTERN.test(text)) {
       ctx.addIssue({
         code: 'custom',
-        message:
-          'must be a positive decimal number such as "100.50" (no signs, exponents or commas)',
+        message: `must be a positive decimal number such as "100.50" (got ${quote(text, 20)}; no signs, exponents, commas or spaces)`,
       });
       return z.NEVER;
     }
@@ -51,7 +60,10 @@ export const positiveDecimal = ({
       return z.NEVER;
     }
     if (decimal.decimalPlaces() > maxDecimals) {
-      ctx.addIssue({ code: 'custom', message: `must have at most ${maxDecimals} decimal places` });
+      ctx.addIssue({
+        code: 'custom',
+        message: `must have at most ${maxDecimals} decimal places (got ${decimal.decimalPlaces()})`,
+      });
       return z.NEVER;
     }
     if (decimal.gt(max)) {

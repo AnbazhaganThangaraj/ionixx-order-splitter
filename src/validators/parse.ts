@@ -23,11 +23,9 @@ export const parseOrThrow = <Schema extends z.ZodType>(
   throw new ValidationError(
     result.error.issues.map((issue) => {
       const path = formatPath(issue.path);
-      if (issue.code === 'unrecognized_keys') {
-        return {
-          path: path || rootName,
-          message: `unknown field(s): ${issue.keys.join(', ')}`,
-        };
+      // Schemas supply their own "unknown field(s) ...; allowed fields ..." message.
+      if (issue.code === 'unrecognized_keys' && !issue.message.startsWith('unknown field')) {
+        return { path: path || rootName, message: `unknown field(s): ${issue.keys.join(', ')}` };
       }
       return { path: path || rootName, message: issue.message };
     }),

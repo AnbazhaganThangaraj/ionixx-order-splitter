@@ -114,7 +114,7 @@ describe('createOrderSchema', () => {
 
     it('rejects a missing orderType', () => {
       const { orderType: _ignored, ...body } = briefExampleRequest;
-      expectValidationError(body, 'orderType', /must be one of: BUY, SELL/);
+      expectValidationError(body, 'orderType', /^is required \(one of BUY, SELL\)$/);
     });
 
     it.each(['HOLD', 'buy', ''])('rejects unsupported orderType %p', (orderType) => {
@@ -169,7 +169,7 @@ describe('createOrderSchema', () => {
       expectValidationError(
         withItem({ symbol: 'AAPL', allocation: '50' }),
         'portfolio',
-        /add up to exactly 100 \(got 90\)/,
+        /add up to exactly 100 \(got 90, 10 short\)/,
       );
     });
 

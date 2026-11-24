@@ -132,7 +132,7 @@ describe('Orders API', () => {
       expect(response.body).toEqual({
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Request validation failed',
+          message: expect.stringMatching(/^Request validation failed: \d+ problems found/),
           details: expect.arrayContaining([
             expect.objectContaining({ path: 'orderType' }),
             expect.objectContaining({ path: 'totalAmount' }),
@@ -154,7 +154,7 @@ describe('Orders API', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error.details).toEqual([
-        { path: 'portfolio', message: 'allocations must add up to exactly 100 (got 60)' },
+        { path: 'portfolio', message: 'allocations must add up to exactly 100 (got 60, 40 short)' },
       ]);
     });
 
@@ -213,7 +213,8 @@ describe('Orders API', () => {
       expect(response.status).toBe(500);
       expect(response.body.error).toEqual({
         code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred',
+        message:
+          'An unexpected error occurred. Please retry later; if it keeps happening, contact support with the requestId.',
         details: [],
       });
       expect(JSON.stringify(response.body)).not.toMatch(/disk on fire|stack/);
@@ -297,7 +298,10 @@ describe('Orders API', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error.details).toEqual([
-        { path: 'orderId', message: 'must be a valid UUID' },
+        {
+          path: 'orderId',
+          message: 'must be a valid order id (UUID), as returned when the order was created',
+        },
       ]);
     });
   });
@@ -307,7 +311,9 @@ describe('Orders API', () => {
     const response = await request(app).get('/api/v1/unknown');
 
     expect(response.status).toBe(404);
-    expect(response.body.error.message).toBe('Route GET /api/v1/unknown not found');
+    expect(response.body.error.message).toBe(
+      'Route GET /api/v1/unknown does not exist; see /docs for the available endpoints',
+    );
   });
 
   it('data does not survive a restart (new app instance = empty history)', async () => {

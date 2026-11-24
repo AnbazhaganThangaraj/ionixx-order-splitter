@@ -44,7 +44,8 @@ export const idempotency =
       throw new ValidationError([
         {
           path: 'headers.idempotency-key',
-          message: 'must be 1-255 characters: letters, digits, ".", "_", ":" or "-"',
+          message:
+            'must be 1-255 characters of letters, digits, ".", "_", ":" or "-" (a UUID works well)',
         },
       ]);
     }
@@ -64,7 +65,8 @@ export const idempotency =
         throw new AppError(
           422,
           'IDEMPOTENCY_KEY_REUSED',
-          'This Idempotency-Key was already used with a different request body',
+          'This Idempotency-Key was already used with a different request body; ' +
+            'use a new key for a new request, or resend the original body to get the original response',
         );
       case 'in-progress':
         audit.record('idempotency.conflict', { ...auditDetails, reason: 'in_progress' });

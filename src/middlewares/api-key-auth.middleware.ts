@@ -52,7 +52,17 @@ export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[], audit: AuditLog): Re
         route: req.originalUrl.split('?')[0],
       });
       res.setHeader('WWW-Authenticate', 'ApiKey header="X-API-Key"');
-      next(new AppError(401, 'UNAUTHORIZED', 'Missing or invalid API key'));
+      // Saying whether the key was missing or wrong reveals nothing an attacker does not
+      // already know, and saves a partner's developer a debugging session.
+      next(
+        new AppError(
+          401,
+          'UNAUTHORIZED',
+          provided === undefined || provided.length === 0
+            ? 'API key is missing: send your key in the X-API-Key header'
+            : 'API key is invalid: check the X-API-Key header value',
+        ),
+      );
       return;
     }
 

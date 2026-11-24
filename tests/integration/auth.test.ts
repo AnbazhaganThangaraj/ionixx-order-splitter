@@ -20,7 +20,7 @@ describe('API key authentication', () => {
     expect(response.headers['www-authenticate']).toBe('ApiKey header="X-API-Key"');
     expect(response.body.error).toEqual({
       code: 'UNAUTHORIZED',
-      message: 'Missing or invalid API key',
+      message: 'API key is missing: send your key in the X-API-Key header',
       details: [],
     });
   });

@@ -5,6 +5,17 @@ import type { AuditLog } from '../lib/audit';
 import { getPartnerId } from './api-key-auth.middleware';
 import { getRequestId } from './request-id.middleware';
 
+/** express-rate-limit attaches its counters to the request as `req.rateLimit`. */
+const retryAfterSeconds = (req: unknown, windowMs: number): number => {
+  const info = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
+  const resetAt = info?.resetTime?.getTime();
+  const ms = resetAt === undefined ? windowMs : resetAt - Date.now();
+  return Math.max(1, Math.ceil(ms / 1000));
+};
+
+const windowText = (windowMs: number): string =>
+  windowMs % 60_000 === 0 ? `${windowMs / 60_000} min` : `${Math.round(windowMs / 1000)} s`;
+
 export interface RateLimitOptions {
   readonly windowMs: number;
   readonly max: number;
@@ -42,7 +53,8 @@ export const apiRateLimit = (
         new AppError(
           429,
           'RATE_LIMITED',
-          'Too many requests; retry after the Retry-After interval',
+          `Too many requests from this IP address (limit ${max} per ${windowText(windowMs)}); ` +
+            `retry in ${retryAfterSeconds(req, windowMs)} s`,
         ),
       );
     },
@@ -70,7 +82,8 @@ export const partnerRateLimit = (
         new AppError(
           429,
           'PARTNER_QUOTA_EXCEEDED',
-          'Partner request quota exceeded; retry after the Retry-After interval',
+          `Partner request quota exceeded (limit ${partnerMax} per ${windowText(windowMs)}); ` +
+            `retry in ${retryAfterSeconds(req, windowMs)} s`,
         ),
       );
     },

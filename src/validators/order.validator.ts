@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ORDER_TYPES, SUPPORTED_CURRENCIES } from '../domain/order.enums';
+import { quote } from '../errors/app-error';
 import { Decimal } from '../lib/decimal';
 import { positiveDecimal } from './decimal.schema';
 
@@ -15,10 +16,44 @@ export const ORDER_LIMITS = {
 /** Exchange tickers: letters/digits plus "." or "-" for share classes (e.g. BRK.B). */
 const SYMBOL_PATTERN = /^[A-Z][A-Z0-9.-]{0,11}$/;
 
+const PORTFOLIO_ITEM_FIELDS = ['symbol', 'allocation', 'marketPrice'];
+const ORDER_FIELDS = ['orderType', 'totalAmount', 'currency', 'portfolio'];
+const QUERY_FIELDS = ['limit', 'offset', 'orderType'];
+
+/** Describes a received value for an error message without echoing large inputs. */
+const describe = (input: unknown): string => {
+  if (input === null) return 'null';
+  if (Array.isArray(input)) return 'an array';
+  if (typeof input === 'string') return quote(input, 20);
+  return typeof input === 'object' ? 'an object' : typeof input;
+};
+
+interface IssueLike {
+  readonly code?: string;
+  readonly input?: unknown;
+  readonly keys?: readonly string[];
+}
+
+/** "is required (...)" when the field is absent, otherwise "must be ... (got ...)". */
+const requiredOr =
+  (requirement: string) =>
+  (issue: IssueLike): string =>
+    issue.input === undefined
+      ? `is required (${requirement})`
+      : `must be ${requirement} (got ${describe(issue.input)})`;
+
+/** Message for a strict object: lists unknown AND allowed fields, or says what was expected. */
+const strictObjectError =
+  (allowed: readonly string[], expected: string) =>
+  (issue: IssueLike): string =>
+    issue.code === 'unrecognized_keys'
+      ? `unknown field(s): ${(issue.keys ?? []).join(', ')}; allowed fields: ${allowed.join(', ')}`
+      : requiredOr(expected)(issue);
+
 const portfolioItemSchema = z.strictObject(
   {
     symbol: z
-      .string({ error: 'is required and must be a string' })
+      .string({ error: requiredOr('a ticker string such as "AAPL"') })
       .trim()
       .toUpperCase()
       .regex(SYMBOL_PATTERN, 'must be a ticker such as "AAPL" or "BRK.B" (max 12 characters)'),
@@ -27,21 +62,23 @@ const portfolioItemSchema = z.strictObject(
   },
   // Strict on purpose: a typo such as "markePrice" must fail loudly instead of
   // silently falling back to the default price.
-  { error: (issue) => (issue.code === 'unrecognized_keys' ? undefined : 'must be an object') },
+  { error: strictObjectError(PORTFOLIO_ITEM_FIELDS, 'an object with symbol and allocation') },
 );
 
 export const createOrderSchema = z
   .strictObject(
     {
-      orderType: z.enum(ORDER_TYPES, { error: `must be one of: ${ORDER_TYPES.join(', ')}` }),
+      orderType: z.enum(ORDER_TYPES, { error: requiredOr(`one of ${ORDER_TYPES.join(', ')}`) }),
       totalAmount: positiveDecimal({ maxDecimals: 2, max: ORDER_LIMITS.maxTotalAmount }),
       currency: z
         .enum(SUPPORTED_CURRENCIES, {
-          error: `must be one of: ${SUPPORTED_CURRENCIES.join(', ')}`,
+          error: requiredOr(`${SUPPORTED_CURRENCIES.join(', ')} (the only supported currency)`),
         })
         .default('USD'),
       portfolio: z
-        .array(portfolioItemSchema, { error: 'must be an array of stocks' })
+        .array(portfolioItemSchema, {
+          error: requiredOr('an array of { symbol, allocation, marketPrice? } objects'),
+        })
         .min(1, 'must contain at least one stock')
         .max(
           ORDER_LIMITS.maxPortfolioSize,
@@ -49,7 +86,10 @@ export const createOrderSchema = z
         ),
     },
     {
-      error: (issue) => (issue.code === 'unrecognized_keys' ? undefined : 'must be a JSON object'),
+      error: strictObjectError(
+        ORDER_FIELDS,
+        'a JSON object with orderType, totalAmount and portfolio',
+      ),
     },
   )
   .superRefine((order, ctx) => {
@@ -60,7 +100,7 @@ export const createOrderSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['portfolio', index, 'symbol'],
-          message: `duplicate symbol "${item.symbol}" (already at portfolio[${firstIndex}])`,
+          message: `duplicate symbol "${item.symbol}" (already at portfolio[${firstIndex}]); combine them into one entry`,
         });
       } else {
         seen.set(item.symbol, index);
@@ -72,33 +112,46 @@ export const createOrderSchema = z
       new Decimal(0),
     );
     if (!totalAllocation.eq(100)) {
+      const gap = totalAllocation.lt(100)
+        ? `${new Decimal(100).minus(totalAllocation).toString()} short`
+        : `${totalAllocation.minus(100).toString()} over`;
       ctx.addIssue({
         code: 'custom',
         path: ['portfolio'],
-        message: `allocations must add up to exactly 100 (got ${totalAllocation.toString()})`,
+        message: `allocations must add up to exactly 100 (got ${totalAllocation.toString()}, ${gap})`,
       });
     }
   });
 
 export type CreateOrderCommand = z.output<typeof createOrderSchema>;
 
-export const listOrdersQuerySchema = z.strictObject({
-  limit: z.coerce
-    .number({ error: 'must be an integer' })
-    .int('must be an integer')
-    .min(1, 'must be at least 1')
-    .max(ORDER_LIMITS.maxPageSize, `must be at most ${ORDER_LIMITS.maxPageSize}`)
-    .default(ORDER_LIMITS.defaultPageSize),
-  offset: z.coerce
-    .number({ error: 'must be an integer' })
-    .int('must be an integer')
-    .min(0, 'must be 0 or more')
-    .default(0),
-  orderType: z.enum(ORDER_TYPES, { error: `must be one of: ${ORDER_TYPES.join(', ')}` }).optional(),
-});
+const pageSizeMessage = `must be an integer from 1 to ${ORDER_LIMITS.maxPageSize}`;
+const offsetMessage = 'must be an integer of 0 or more';
+
+export const listOrdersQuerySchema = z.strictObject(
+  {
+    limit: z.coerce
+      .number({ error: pageSizeMessage })
+      .int(pageSizeMessage)
+      .min(1, pageSizeMessage)
+      .max(ORDER_LIMITS.maxPageSize, pageSizeMessage)
+      .default(ORDER_LIMITS.defaultPageSize),
+    offset: z.coerce
+      .number({ error: offsetMessage })
+      .int(offsetMessage)
+      .min(0, offsetMessage)
+      .default(0),
+    orderType: z
+      .enum(ORDER_TYPES, { error: requiredOr(`one of ${ORDER_TYPES.join(', ')}`) })
+      .optional(),
+  },
+  { error: strictObjectError(QUERY_FIELDS, 'query parameters') },
+);
 
 export type ListOrdersQuery = z.output<typeof listOrdersQuerySchema>;
 
 export const orderIdParamSchema = z.object({
-  orderId: z.uuid({ error: 'must be a valid UUID' }),
+  orderId: z.uuid({
+    error: 'must be a valid order id (UUID), as returned when the order was created',
+  }),
 });

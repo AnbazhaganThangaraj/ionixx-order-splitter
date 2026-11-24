@@ -1,3 +1,5 @@
+import type { ErrorCode } from './error-codes';
+
 export interface ErrorDetail {
   readonly path: string;
   readonly message: string;
@@ -10,7 +12,7 @@ export interface ErrorDetail {
 export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
-    public readonly code: string,
+    public readonly code: ErrorCode,
     message: string,
     public readonly details: readonly ErrorDetail[] = [],
   ) {
@@ -20,8 +22,14 @@ export class AppError extends Error {
 }
 
 export class ValidationError extends AppError {
-  constructor(details: readonly ErrorDetail[], message = 'Request validation failed') {
-    super(400, 'VALIDATION_ERROR', message, details);
+  constructor(details: readonly ErrorDetail[]) {
+    const count = details.length;
+    super(
+      400,
+      'VALIDATION_ERROR',
+      `Request validation failed: ${count} problem${count === 1 ? '' : 's'} found (see details)`,
+      details,
+    );
     this.name = 'ValidationError';
   }
 }
@@ -32,3 +40,7 @@ export class NotFoundError extends AppError {
     this.name = 'NotFoundError';
   }
 }
+
+/** Shortens client-supplied text before echoing it back in an error message. */
+export const quote = (value: string, max = 40): string =>
+  JSON.stringify(value.length > max ? `${value.slice(0, max)}…` : value);
