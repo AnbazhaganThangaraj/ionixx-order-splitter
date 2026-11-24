@@ -1,5 +1,6 @@
 import type { Order } from '../domain/order.types';
 import { NotFoundError } from '../errors/app-error';
+import type { AuditLog } from '../lib/audit';
 import type { Clock } from '../lib/clock';
 import type { OrderPage, OrderRepository } from '../repositories/order.repository';
 import type { CreateOrderCommand, ListOrdersQuery } from '../validators/order.validator';
@@ -14,6 +15,7 @@ export interface OrderServiceDependencies {
   readonly generateId: () => string;
   readonly quantityPrecision: number;
   readonly moneyPrecision: number;
+  readonly audit: AuditLog;
 }
 
 /**
@@ -43,6 +45,14 @@ export class OrderService {
     };
 
     await this.deps.repository.save(order);
+    // Identifiers only: amounts and holdings stay out of logs.
+    this.deps.audit.record('order.created', {
+      orderId: order.orderId,
+      partnerId,
+      orderType: order.orderType,
+      lineCount: order.lines.length,
+      executeAt: order.execution.executeAt,
+    });
     return order;
   }
 

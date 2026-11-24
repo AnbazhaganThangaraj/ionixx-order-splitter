@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import express, { type Express } from 'express';
 import type { AppConfig } from './config/app.config';
 import { OrderController } from './controllers/order.controller';
+import { createAuditLog } from './lib/audit';
 import { type Clock, systemClock } from './lib/clock';
 import { AppLifecycle } from './lib/lifecycle';
 import { createLogger, type Logger } from './lib/logger';
@@ -44,6 +45,7 @@ export interface AppDependencies {
  */
 export const createApp = (config: AppConfig, deps: AppDependencies = {}): Express => {
   const logger = deps.logger ?? createLogger(config.logLevel);
+  const audit = createAuditLog(logger);
   const clock = deps.clock ?? systemClock;
   const lifecycle = deps.lifecycle ?? new AppLifecycle();
   const idempotencyStore =
@@ -58,6 +60,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     generateId: deps.generateId ?? randomUUID,
     quantityPrecision: config.order.quantityPrecision,
     moneyPrecision: config.order.moneyPrecision,
+    audit,
   });
 
   const app = express();
@@ -78,9 +81,9 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     '/api/v1/orders',
     recordMountPath(),
     noStore(),
-    apiRateLimit(config.http.rateLimit),
-    apiKeyAuth(config.auth.apiKeys),
-    createOrderRouter(new OrderController(orderService), idempotencyStore),
+    apiRateLimit(config.http.rateLimit, audit),
+    apiKeyAuth(config.auth.apiKeys, audit),
+    createOrderRouter(new OrderController(orderService), idempotencyStore, audit),
   );
 
   app.use(notFound());

@@ -1,6 +1,8 @@
 import type { RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { AppError } from '../errors/app-error';
+import type { AuditLog } from '../lib/audit';
+import { getRequestId } from './request-id.middleware';
 
 export interface RateLimitOptions {
   readonly windowMs: number;
@@ -15,13 +17,21 @@ export interface RateLimitOptions {
  * The counter store is in memory, i.e. per process. With several instances this
  * should move to a shared store (e.g. Redis) or to the API gateway.
  */
-export const apiRateLimit = ({ windowMs, max }: RateLimitOptions): RequestHandler =>
+export const apiRateLimit = (
+  { windowMs, max }: RateLimitOptions,
+  audit: AuditLog,
+): RequestHandler =>
   rateLimit({
     windowMs,
     limit: max,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    handler: (_req, _res, next) => {
+    handler: (req, res, next) => {
+      audit.record('rate_limit.exceeded', {
+        requestId: getRequestId(res.locals),
+        scope: 'ip',
+        clientIp: req.ip,
+      });
       next(
         new AppError(
           429,

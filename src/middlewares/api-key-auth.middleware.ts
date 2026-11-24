@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import type { ApiKeyEntry } from '../config/app.config';
 import { AppError } from '../errors/app-error';
+import type { AuditLog } from '../lib/audit';
+import { getRequestId } from './request-id.middleware';
 
 export const API_KEY_HEADER = 'x-api-key';
 
@@ -18,7 +20,7 @@ const sha256 = (value: string): Buffer => createHash('sha256').update(value, 'ut
  * checked (no early exit), so response timing does not reveal how much of a guess
  * was right or which key matched.
  */
-export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[]): RequestHandler => {
+export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[], audit: AuditLog): RequestHandler => {
   const stored = apiKeys.map(({ partnerId, keyHash }) => ({
     partnerId,
     digest: Buffer.from(keyHash, 'hex'),
@@ -43,6 +45,12 @@ export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[]): RequestHandler => {
     }
 
     if (partnerId === undefined) {
+      audit.record('auth.failed', {
+        requestId: getRequestId(res.locals),
+        clientIp: req.ip,
+        reason: provided === undefined || provided.length === 0 ? 'missing_key' : 'invalid_key',
+        route: req.originalUrl.split('?')[0],
+      });
       res.setHeader('WWW-Authenticate', 'ApiKey header="X-API-Key"');
       next(new AppError(401, 'UNAUTHORIZED', 'Missing or invalid API key'));
       return;

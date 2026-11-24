@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { AppError, ValidationError } from '../errors/app-error';
+import type { AuditLog } from '../lib/audit';
 import type { IdempotencyStore } from '../repositories/idempotency.store';
+import { getRequestId } from './request-id.middleware';
 import { getPartnerId } from './api-key-auth.middleware';
 
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -31,7 +33,7 @@ const stableStringify = (value: unknown): string => {
  * Keys are scoped per partner, so two partners can never collide.
  */
 export const idempotency =
-  (store: IdempotencyStore): RequestHandler =>
+  (store: IdempotencyStore, audit: AuditLog): RequestHandler =>
   async (req, res, next) => {
     const key = req.get(IDEMPOTENCY_HEADER);
     if (key === undefined) {
@@ -50,15 +52,22 @@ export const idempotency =
     const scope = `${getPartnerId(res.locals)}:${key}`;
     const requestHash = createHash('sha256').update(stableStringify(req.body)).digest('hex');
     const result = await store.begin(scope, requestHash);
+    const auditDetails = {
+      requestId: getRequestId(res.locals),
+      partnerId: getPartnerId(res.locals),
+      idempotencyKey: key,
+    };
 
     switch (result.kind) {
       case 'mismatch':
+        audit.record('idempotency.conflict', { ...auditDetails, reason: 'different_body' });
         throw new AppError(
           422,
           'IDEMPOTENCY_KEY_REUSED',
           'This Idempotency-Key was already used with a different request body',
         );
       case 'in-progress':
+        audit.record('idempotency.conflict', { ...auditDetails, reason: 'in_progress' });
         throw new AppError(
           409,
           'IDEMPOTENCY_REQUEST_IN_PROGRESS',
@@ -66,6 +75,7 @@ export const idempotency =
         );
       case 'replay': {
         const { statusCode, body, location } = result.response;
+        audit.record('idempotency.replayed', auditDetails);
         res.setHeader('Idempotent-Replayed', 'true');
         if (location !== undefined) res.setHeader('Location', location);
         res.status(statusCode).json(body);
