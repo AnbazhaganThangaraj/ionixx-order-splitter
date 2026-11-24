@@ -35,10 +35,10 @@ const start = (): void => {
   }
 
   const logger = createLogger(config.logLevel);
-  if (config.auth.apiKeys.length === 0) {
+  if (config.auth.disabled) {
     logger.warn(
-      'API key authentication is DISABLED because API_KEYS is not set. ' +
-        'Allowed for local development only; production refuses to start without keys.',
+      'API key authentication is DISABLED (AUTH_DISABLED=true). Local development only; ' +
+        'it is refused when NODE_ENV=production.',
     );
   }
 

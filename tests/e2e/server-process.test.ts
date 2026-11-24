@@ -20,7 +20,13 @@ interface Started {
 const startServer = (env: Record<string, string>): Started => {
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
     cwd: ROOT,
-    env: { PATH: process.env.PATH ?? '', NODE_ENV: 'development', LOG_LEVEL: 'info', ...env },
+    env: {
+      PATH: process.env.PATH ?? '',
+      NODE_ENV: 'development',
+      LOG_LEVEL: 'info',
+      AUTH_DISABLED: 'true',
+      ...env,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(child);
@@ -85,8 +91,14 @@ describe('server process', () => {
     expect(server.output()).toContain('QUANTITY_PRECISION');
   });
 
+  it('refuses to start when authentication is neither configured nor explicitly disabled', async () => {
+    const server = startServer({ PORT: randomPort(), AUTH_DISABLED: '' });
+    expect(await server.exited).toBe(1);
+    expect(server.output()).toContain('no API keys configured');
+  });
+
   it('refuses to start in production without API keys', async () => {
-    const server = startServer({ PORT: randomPort(), NODE_ENV: 'production' });
+    const server = startServer({ PORT: randomPort(), NODE_ENV: 'production', AUTH_DISABLED: '' });
     expect(await server.exited).toBe(1);
     expect(server.output()).toContain('is required when NODE_ENV=production');
   });

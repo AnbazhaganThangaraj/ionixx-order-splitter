@@ -1,9 +1,17 @@
 import { ConfigError, loadConfig } from '../../../src/config/app.config';
 import { hashApiKey } from '../../../src/lib/crypto';
 
+/** Auth must be configured explicitly; most tests here are about other settings. */
+const load = (env: Record<string, string>) =>
+  loadConfig(
+    env.API_KEYS === undefined && env.API_KEY_HASHES === undefined && env.NODE_ENV !== 'production'
+      ? { AUTH_DISABLED: 'true', ...env }
+      : env,
+  );
+
 describe('loadConfig', () => {
   it('applies safe defaults when nothing is set', () => {
-    const config = loadConfig({});
+    const config = load({});
 
     expect(config.port).toBe(3000);
     expect(config.order).toEqual({
@@ -19,7 +27,7 @@ describe('loadConfig', () => {
   });
 
   it('reads overrides from the environment', () => {
-    const config = loadConfig({
+    const config = load({
       PORT: '8080',
       QUANTITY_PRECISION: '7',
       DEFAULT_STOCK_PRICE: '250.50',
@@ -39,19 +47,41 @@ describe('loadConfig', () => {
   });
 
   it('reads the number of trusted proxies', () => {
-    expect(loadConfig({}).http.trustProxyHops).toBe(0);
-    expect(loadConfig({ TRUST_PROXY: '2' }).http.trustProxyHops).toBe(2);
+    expect(load({}).http.trustProxyHops).toBe(0);
+    expect(load({ TRUST_PROXY: '2' }).http.trustProxyHops).toBe(2);
   });
 
   describe('API_KEYS', () => {
     const key = (prefix: string) => `${prefix}-0123456789abcdefghijklmn`;
 
-    it('is empty (auth disabled) by default outside production', () => {
-      expect(loadConfig({}).auth.apiKeys).toEqual([]);
+    it('fails closed: with no keys and no explicit opt-out the app refuses to start', () => {
+      expect(() => loadConfig({})).toThrow(/no API keys configured/);
+      expect(() => loadConfig({ NODE_ENV: 'development' })).toThrow(/AUTH_DISABLED=true/);
+    });
+
+    it('can be disabled explicitly for local development', () => {
+      const config = loadConfig({ AUTH_DISABLED: 'true' });
+      expect(config.auth).toMatchObject({ disabled: true, apiKeys: [] });
+    });
+
+    it('cannot be disabled in production', () => {
+      expect(() => loadConfig({ NODE_ENV: 'production', AUTH_DISABLED: 'true' })).toThrow(
+        /AUTH_DISABLED=true is not allowed when NODE_ENV=production/,
+      );
+    });
+
+    it('rejects AUTH_DISABLED together with keys (ambiguous intent)', () => {
+      expect(() => loadConfig({ AUTH_DISABLED: 'true', API_KEYS: `a:${key('a')}` })).toThrow(
+        /cannot be combined/,
+      );
+    });
+
+    it.each(['yes', '1', 'TRUE'])('rejects AUTH_DISABLED=%p', (value) => {
+      expect(() => loadConfig({ AUTH_DISABLED: value })).toThrow(/must be "true" or "false"/);
     });
 
     it('parses partner:key pairs, keeping only SHA-256 hashes of the keys', () => {
-      const config = loadConfig({
+      const config = load({
         API_KEYS: ` alpha:${key('a1')}, alpha:${key('a2')} ,beta_2:${key('b')} `,
       });
       expect(config.auth.apiKeys).toEqual([
@@ -65,7 +95,7 @@ describe('loadConfig', () => {
 
     it('accepts pre-hashed keys via API_KEY_HASHES (the production format)', () => {
       const hash = hashApiKey(key('h'));
-      const config = loadConfig({ API_KEY_HASHES: `gamma:${hash.toUpperCase()}` });
+      const config = load({ API_KEY_HASHES: `gamma:${hash.toUpperCase()}` });
       expect(config.auth.apiKeys).toEqual([{ partnerId: 'gamma', keyHash: hash }]);
       expect(config.auth.plaintextKeysConfigured).toBe(false);
     });
@@ -73,13 +103,13 @@ describe('loadConfig', () => {
     it.each(['gamma:abc', `gamma:${'z'.repeat(64)}`, 'abc'])(
       'rejects an invalid hash entry %p',
       (value) => {
-        expect(() => loadConfig({ API_KEY_HASHES: value })).toThrow(/API_KEY_HASHES/);
+        expect(() => load({ API_KEY_HASHES: value })).toThrow(/API_KEY_HASHES/);
       },
     );
 
     it('rejects the same key configured twice, across both variables', () => {
       expect(() =>
-        loadConfig({ API_KEYS: `a:${key('x')}`, API_KEY_HASHES: `b:${hashApiKey(key('x'))}` }),
+        load({ API_KEYS: `a:${key('x')}`, API_KEY_HASHES: `b:${hashApiKey(key('x'))}` }),
       ).toThrow(/more than once/);
     });
 
@@ -96,12 +126,12 @@ describe('loadConfig', () => {
       ['bad partner id', `al pha:${'k'.repeat(30)}`],
       ['duplicate key', `a:${'k'.repeat(30)},b:${'k'.repeat(30)}`],
     ])('rejects %s', (_label, value) => {
-      expect(() => loadConfig({ API_KEYS: value })).toThrow(ConfigError);
+      expect(() => load({ API_KEYS: value })).toThrow(ConfigError);
     });
 
     it('never includes the key itself in error messages', () => {
       try {
-        loadConfig({ API_KEYS: 'alpha:secret-but-short' });
+        load({ API_KEYS: 'alpha:secret-but-short' });
       } catch (error) {
         expect((error as ConfigError).message).not.toContain('secret-but-short');
         return;
@@ -110,21 +140,21 @@ describe('loadConfig', () => {
     });
 
     it('is required in production', () => {
-      expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(
+      expect(() => load({ NODE_ENV: 'production' })).toThrow(
         /is required when NODE_ENV=production/,
       );
       expect(
-        loadConfig({ NODE_ENV: 'production', API_KEY_HASHES: `alpha:${hashApiKey(key('a'))}` }).auth
+        load({ NODE_ENV: 'production', API_KEY_HASHES: `alpha:${hashApiKey(key('a'))}` }).auth
           .apiKeys,
       ).toHaveLength(1);
       expect(
-        loadConfig({ NODE_ENV: 'production', API_KEYS: `alpha:${key('a')}` }).auth.apiKeys,
+        load({ NODE_ENV: 'production', API_KEYS: `alpha:${key('a')}` }).auth.apiKeys,
       ).toHaveLength(1);
     });
   });
 
   it('treats empty values as unset', () => {
-    expect(loadConfig({ QUANTITY_PRECISION: '' }).order.quantityPrecision).toBe(3);
+    expect(load({ QUANTITY_PRECISION: '' }).order.quantityPrecision).toBe(3);
   });
 
   it.each([
@@ -146,18 +176,18 @@ describe('loadConfig', () => {
     ['RATE_LIMIT_WINDOW_MS', '10'],
     ['IDEMPOTENCY_TTL_SECONDS', '5'],
   ])('fails fast when %s=%s', (key, value) => {
-    expect(() => loadConfig({ [key]: value })).toThrow(ConfigError);
+    expect(() => load({ [key]: value })).toThrow(ConfigError);
   });
 
   it('rejects a market open time that is not before close time', () => {
-    expect(() => loadConfig({ MARKET_OPEN_TIME: '16:00', MARKET_CLOSE_TIME: '09:30' })).toThrow(
+    expect(() => load({ MARKET_OPEN_TIME: '16:00', MARKET_CLOSE_TIME: '09:30' })).toThrow(
       /MARKET_OPEN_TIME must be earlier/,
     );
   });
 
   it('reports every invalid setting at once', () => {
     try {
-      loadConfig({ QUANTITY_PRECISION: '-1', DEFAULT_STOCK_PRICE: '0' });
+      load({ QUANTITY_PRECISION: '-1', DEFAULT_STOCK_PRICE: '0' });
       throw new Error('expected loadConfig to throw');
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigError);

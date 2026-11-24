@@ -97,6 +97,10 @@ const envSchema = z
     TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
     API_KEYS: z.string().transform(parseKeyList('plaintext')).default([]),
     API_KEY_HASHES: z.string().transform(parseKeyList('hash')).default([]),
+    AUTH_DISABLED: z
+      .enum(['true', 'false'], { error: 'must be "true" or "false"' })
+      .default('false')
+      .transform((value) => value === 'true'),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
     PARTNER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000_000).default(600),
@@ -120,12 +124,31 @@ const envSchema = z
       }
       seen.set(entry.keyHash, entry.partnerId);
     }
-    if (env.NODE_ENV === 'production' && all.length === 0) {
+    // Fail closed: running without authentication must be an explicit, local-only choice,
+    // not the accidental result of forgetting to set NODE_ENV or the keys.
+    if (env.AUTH_DISABLED) {
+      if (env.NODE_ENV === 'production') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['AUTH_DISABLED'],
+          message: 'AUTH_DISABLED=true is not allowed when NODE_ENV=production',
+        });
+      }
+      if (all.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['AUTH_DISABLED'],
+          message: 'AUTH_DISABLED=true cannot be combined with API_KEYS or API_KEY_HASHES',
+        });
+      }
+    } else if (all.length === 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['API_KEYS'],
         message:
-          'API_KEY_HASHES (or API_KEYS) is required when NODE_ENV=production (authentication cannot be disabled)',
+          env.NODE_ENV === 'production'
+            ? 'API_KEY_HASHES (or API_KEYS) is required when NODE_ENV=production (authentication cannot be disabled)'
+            : 'no API keys configured: set API_KEY_HASHES (or API_KEYS), or AUTH_DISABLED=true for local development only',
       });
     }
   });
@@ -152,7 +175,8 @@ export interface AppConfig {
     readonly ttlSeconds: number;
   };
   readonly auth: {
-    /** Empty = authentication disabled (only allowed outside production). */
+    /** True only when AUTH_DISABLED=true was set explicitly (never allowed in production). */
+    readonly disabled: boolean;
     readonly apiKeys: readonly ApiKeyEntry[];
     /** True when plaintext keys were supplied via API_KEYS (fine locally, discouraged in production). */
     readonly plaintextKeysConfigured: boolean;
@@ -210,6 +234,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
       ttlSeconds: parsed.IDEMPOTENCY_TTL_SECONDS,
     },
     auth: {
+      disabled: parsed.AUTH_DISABLED,
       apiKeys: [...parsed.API_KEYS, ...parsed.API_KEY_HASHES],
       plaintextKeysConfigured: parsed.API_KEYS.length > 0,
     },

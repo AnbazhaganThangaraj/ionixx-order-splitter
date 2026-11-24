@@ -25,7 +25,10 @@ export const buildTestApp = (
       logs.push(JSON.parse(line) as LogEntry);
     },
   });
-  const app = createApp(loadConfig({ NODE_ENV: 'test', ...env }), { logger, ...deps });
+  // Tests run without authentication unless a test configures keys.
+  const authEnv =
+    env.API_KEYS === undefined && env.API_KEY_HASHES === undefined ? { AUTH_DISABLED: 'true' } : {};
+  const app = createApp(loadConfig({ NODE_ENV: 'test', ...authEnv, ...env }), { logger, ...deps });
   return { app, logs };
 };
 

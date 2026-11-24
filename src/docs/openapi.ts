@@ -48,7 +48,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       `quantity precision ${config.order.quantityPrecision} decimal places, market ` +
       `${config.market.timeZone} ${config.market.openTime}-${config.market.closeTime} Mon-Fri ` +
       '(no holiday calendar). Data is held in memory and lost on restart. ' +
-      (config.auth.apiKeys.length > 0
+      (!config.auth.disabled
         ? 'Authentication: send your partner API key in the X-API-Key header.'
         : 'Authentication is DISABLED on this instance (development mode).'),
   },

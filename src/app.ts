@@ -82,7 +82,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     recordMountPath(),
     noStore(),
     apiRateLimit(config.http.rateLimit, audit),
-    apiKeyAuth(config.auth.apiKeys, audit),
+    apiKeyAuth(config.auth, audit),
     partnerRateLimit(config.http.rateLimit, audit),
     createOrderRouter(new OrderController(orderService), idempotencyStore, audit, logger),
   );

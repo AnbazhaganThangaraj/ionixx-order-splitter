@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
-import type { ApiKeyEntry } from '../config/app.config';
+import type { AppConfig } from '../config/app.config';
 import { AppError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
 import { sha256 } from '../lib/crypto';
@@ -19,14 +19,14 @@ export const ANONYMOUS_PARTNER = 'anonymous';
  * checked (no early exit), so response timing does not reveal how much of a guess
  * was right or which key matched.
  */
-export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[], audit: AuditLog): RequestHandler => {
-  const stored = apiKeys.map(({ partnerId, keyHash }) => ({
+export const apiKeyAuth = (auth: AppConfig['auth'], audit: AuditLog): RequestHandler => {
+  const stored = auth.apiKeys.map(({ partnerId, keyHash }) => ({
     partnerId,
     digest: Buffer.from(keyHash, 'hex'),
   }));
 
   return (req, res, next) => {
-    if (stored.length === 0) {
+    if (auth.disabled) {
       res.locals.partnerId = ANONYMOUS_PARTNER;
       next();
       return;

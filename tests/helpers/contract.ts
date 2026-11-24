@@ -12,7 +12,7 @@ interface Operation {
   responses: Record<string, { content?: Record<string, { schema?: unknown }> }>;
 }
 
-const document = buildOpenApiDocument(loadConfig({ NODE_ENV: 'test' })) as {
+const document = buildOpenApiDocument(loadConfig({ NODE_ENV: 'test', AUTH_DISABLED: 'true' })) as {
   paths: Record<string, Record<string, Operation>>;
   components: unknown;
 };
