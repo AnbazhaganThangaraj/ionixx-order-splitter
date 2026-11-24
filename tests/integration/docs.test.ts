@@ -10,7 +10,20 @@ describe('API docs', () => {
     expect(response.status).toBe(200);
     expect(response.body.openapi).toBe('3.1.0');
     expect(Object.keys(response.body.paths)).toEqual(
-      expect.arrayContaining(['/api/v1/orders', '/api/v1/orders/{orderId}', '/health']),
+      expect.arrayContaining([
+        '/api/v1/orders',
+        '/api/v1/orders/{orderId}',
+        '/health/live',
+        '/health/ready',
+      ]),
+    );
+    expect(response.body.components.securitySchemes.ApiKeyAuth).toEqual({
+      type: 'apiKey',
+      in: 'header',
+      name: 'X-API-Key',
+    });
+    expect(Object.keys(response.body.paths['/api/v1/orders'].post.responses)).toEqual(
+      expect.arrayContaining(['201', '400', '401', '409', '422', '429']),
     );
     expect(response.body.info.description).toMatch(/quantity precision 5 decimal places/);
   });

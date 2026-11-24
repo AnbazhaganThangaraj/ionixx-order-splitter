@@ -19,6 +19,8 @@ const errorResponse = (description: string, code: string): Record<string, unknow
   },
 });
 
+const secured = [{ ApiKeyAuth: [] }];
+
 /** OpenAPI 3.1 contract, served at /docs (UI) and /docs/openapi.json (raw). */
 export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown> => ({
   openapi: '3.1.0',
@@ -31,7 +33,10 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       `Current settings: default price USD ${config.order.defaultStockPrice}, ` +
       `quantity precision ${config.order.quantityPrecision} decimal places, market ` +
       `${config.market.timeZone} ${config.market.openTime}-${config.market.closeTime} Mon-Fri ` +
-      '(no holiday calendar). Data is held in memory and lost on restart.',
+      '(no holiday calendar). Data is held in memory and lost on restart. ' +
+      (config.auth.apiKeys.length > 0
+        ? 'Authentication: send your partner API key in the X-API-Key header.'
+        : 'Authentication is DISABLED on this instance (development mode).'),
   },
   servers: [{ url: `http://localhost:${config.port}` }],
   tags: [{ name: 'Orders' }, { name: 'Health' }],
@@ -40,6 +45,19 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       post: {
         tags: ['Orders'],
         summary: 'Calculate and create a split order',
+        security: secured,
+        parameters: [
+          {
+            name: 'Idempotency-Key',
+            in: 'header',
+            required: false,
+            description:
+              'Optional. Retrying with the same key and body replays the original response ' +
+              'instead of creating a second order. Scoped per partner, kept for ' +
+              `${config.idempotency.ttlSeconds} seconds.`,
+            schema: { type: 'string', pattern: '^[A-Za-z0-9._:-]{1,255}$' },
+          },
+        ],
         requestBody: {
           required: true,
           content: {
@@ -79,18 +97,33 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             headers: {
               Location: { schema: { type: 'string' }, description: 'URL of the new order' },
               'X-Request-Id': { schema: { type: 'string' } },
+              'Idempotent-Replayed': {
+                schema: { type: 'string', enum: ['true'] },
+                description: 'Present when this is a replay of an earlier response',
+              },
             },
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
           },
           '400': errorResponse('Invalid JSON or failed validation', 'VALIDATION_ERROR'),
+          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
+          '409': errorResponse(
+            'A request with this Idempotency-Key is still being processed',
+            'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+          ),
           '413': errorResponse('Body larger than 100kb', 'PAYLOAD_TOO_LARGE'),
           '415': errorResponse('Content-Type is not application/json', 'UNSUPPORTED_MEDIA_TYPE'),
+          '422': errorResponse(
+            'Idempotency-Key reused with a different body',
+            'IDEMPOTENCY_KEY_REUSED',
+          ),
+          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
           '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
       get: {
         tags: ['Orders'],
-        summary: 'List historic orders (newest first)',
+        summary: "List the partner's historic orders (newest first)",
+        security: secured,
         parameters: [
           {
             name: 'limit',
@@ -123,13 +156,16 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             },
           },
           '400': errorResponse('Invalid query parameters', 'VALIDATION_ERROR'),
+          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
+          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
         },
       },
     },
     '/api/v1/orders/{orderId}': {
       get: {
         tags: ['Orders'],
-        summary: 'Get one order',
+        summary: 'Get one of your orders',
+        security: secured,
         parameters: [
           {
             name: 'orderId',
@@ -144,19 +180,34 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
           },
           '400': errorResponse('orderId is not a UUID', 'VALIDATION_ERROR'),
-          '404': errorResponse('No order with this id', 'NOT_FOUND'),
+          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
+          '404': errorResponse('No order with this id for your partner account', 'NOT_FOUND'),
+          '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
         },
       },
     },
-    '/health': {
+    '/health/live': {
       get: {
         tags: ['Health'],
-        summary: 'Process health check',
-        responses: { '200': { description: 'Service is up' } },
+        summary: 'Liveness probe (also available as /health)',
+        responses: { '200': { description: 'Process is up' } },
+      },
+    },
+    '/health/ready': {
+      get: {
+        tags: ['Health'],
+        summary: 'Readiness probe',
+        responses: {
+          '200': { description: 'Ready to receive traffic' },
+          '503': { description: 'Shutting down; stop sending traffic' },
+        },
       },
     },
   },
   components: {
+    securitySchemes: {
+      ApiKeyAuth: { type: 'apiKey', in: 'header', name: 'X-API-Key' },
+    },
     schemas: {
       CreateOrderRequest: {
         type: 'object',
@@ -224,6 +275,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         type: 'object',
         properties: {
           orderId: { type: 'string', format: 'uuid' },
+          partnerId: { type: 'string', example: 'partner-a' },
           orderType: { type: 'string', enum: ['BUY', 'SELL'] },
           status: { type: 'string', enum: ['SCHEDULED'] },
           currency: { type: 'string', enum: ['USD'] },

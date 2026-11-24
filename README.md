@@ -1,5 +1,7 @@
 # Ionixx Order Splitter
 
+[![CI](https://github.com/AnbazhaganThangaraj/ionixx-order-splitter/actions/workflows/ci.yml/badge.svg)](https://github.com/AnbazhaganThangaraj/ionixx-order-splitter/actions/workflows/ci.yml)
+
 A REST API for a robo-advisor's model-portfolio offering. A partner sends a user's
 model portfolio and a total amount to **buy or sell**. The API responds with:
 
@@ -19,6 +21,7 @@ survive a restart, as the brief requires.
 - [Scripts](#scripts)
 - [API](#api)
 - [Business rules](#business-rules)
+- [Production readiness](#production-readiness)
 - [Architecture](#architecture)
 - [Testing](#testing)
 - [Dependencies](#dependencies)
@@ -28,7 +31,7 @@ survive a restart, as the brief requires.
 
 ## Quick start
 
-Prerequisites: **Node.js 20 or newer** (developed on Node 22; see `.nvmrc`) and npm.
+Prerequisites: **Node.js 22 or newer** (see `.nvmrc`; CI runs Node 22 and 24) and npm.
 
 ```bash
 git clone https://github.com/AnbazhaganThangaraj/ionixx-order-splitter.git
@@ -43,6 +46,26 @@ For development with auto-reload: `npm run dev`.
 Every setting has a safe default, so no `.env` file is needed. To change settings,
 copy `.env.example` to `.env` and edit it.
 
+**Authentication is off by default for local development** (the server logs a warning)
+so the examples below work as they are. To run with authentication, as production does:
+
+```bash
+API_KEYS="partner-a:replace-with-a-long-random-key-123456" npm start
+# then send the header on every /api/v1 request:
+#   -H 'X-API-Key: replace-with-a-long-random-key-123456'
+```
+
+With `NODE_ENV=production` the app refuses to start unless `API_KEYS` is set.
+
+**Run with Docker** (production image, non-root, `NODE_ENV=production`):
+
+```bash
+docker build -t ionixx-order-splitter .
+docker run --rm -p 3000:3000 \
+  -e API_KEYS="partner-a:replace-with-a-long-random-key-123456" \
+  ionixx-order-splitter
+```
+
 Interactive API docs (Swagger UI): **http://localhost:3000/docs**
 (raw OpenAPI document: `/docs/openapi.json`).
 
@@ -50,16 +73,21 @@ Interactive API docs (Swagger UI): **http://localhost:3000/docs**
 
 ## Configuration
 
-| Variable              | Default            | Description                                                   |
-| --------------------- | ------------------ | ------------------------------------------------------------- |
-| `PORT`                | `3000`             | HTTP port                                                     |
-| `NODE_ENV`            | `development`      | `development`, `test` or `production`                         |
-| `LOG_LEVEL`           | `info`             | pino level (`silent` … `trace`)                               |
-| `DEFAULT_STOCK_PRICE` | `100`              | Price (USD) used when the partner does not send `marketPrice` |
-| `QUANTITY_PRECISION`  | `3`                | Decimal places allowed for share quantities (0–10), e.g. `7`  |
-| `MARKET_TIMEZONE`     | `America/New_York` | IANA time zone of the exchange                                |
-| `MARKET_OPEN_TIME`    | `09:30`            | Session open, `HH:mm`, in the exchange time zone              |
-| `MARKET_CLOSE_TIME`   | `16:00`            | Session close, `HH:mm`, in the exchange time zone (exclusive) |
+| Variable                  | Default            | Description                                                                                   |
+| ------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| `PORT`                    | `3000`             | HTTP port                                                                                     |
+| `NODE_ENV`                | `development`      | `development`, `test` or `production`                                                         |
+| `LOG_LEVEL`               | `info`             | pino level (`silent` … `trace`)                                                               |
+| `DEFAULT_STOCK_PRICE`     | `100`              | Price (USD) used when the partner does not send `marketPrice`                                 |
+| `QUANTITY_PRECISION`      | `3`                | Decimal places allowed for share quantities (0–10), e.g. `7`                                  |
+| `MARKET_TIMEZONE`         | `America/New_York` | IANA time zone of the exchange                                                                |
+| `MARKET_OPEN_TIME`        | `09:30`            | Session open, `HH:mm`, in the exchange time zone                                              |
+| `MARKET_CLOSE_TIME`       | `16:00`            | Session close, `HH:mm`, in the exchange time zone (exclusive)                                 |
+| `API_KEYS`                | _(empty)_          | `partnerId:key,partnerId:key` (keys ≥ 24 chars). Empty = auth off; **required in production** |
+| `RATE_LIMIT_MAX`          | `100`              | Max `/api/v1` requests per client IP per window                                               |
+| `RATE_LIMIT_WINDOW_MS`    | `60000`            | Rate-limit window in milliseconds                                                             |
+| `IDEMPOTENCY_TTL_SECONDS` | `86400`            | How long an `Idempotency-Key` response can be replayed                                        |
+| `TRUST_PROXY`             | `0`                | Number of proxies/load balancers in front (0 = ignore `X-Forwarded-For`)                      |
 
 Configuration is validated on startup. If any value is invalid, the process prints
 every problem and exits with code 1 instead of calculating with bad settings:
@@ -95,17 +123,19 @@ QUANTITY_PRECISION=7 npm start
 
 ## API
 
-Base path: `/api/v1`. All bodies are JSON. **Monetary values, percentages, prices and
+Base path: `/api/v1`. All bodies are JSON. When `API_KEYS` is set, every `/api/v1`
+request needs an **`X-API-Key`** header, and each partner only ever sees its own orders. **Monetary values, percentages, prices and
 quantities are decimal strings** (e.g. `"100.50"`). JSON numbers are accepted as input
 too, but strings are preferred because JSON numbers are binary floating point.
 
-| Method | Path                       | Purpose                            | Success |
-| ------ | -------------------------- | ---------------------------------- | ------- |
-| POST   | `/api/v1/orders`           | Calculate and create a split order | 201     |
-| GET    | `/api/v1/orders`           | Order history, newest first, paged | 200     |
-| GET    | `/api/v1/orders/{orderId}` | One order                          | 200     |
-| GET    | `/health`                  | Health check                       | 200     |
-| GET    | `/docs`                    | Swagger UI                         | 200     |
+| Method | Path                       | Purpose                                   | Success |
+| ------ | -------------------------- | ----------------------------------------- | ------- |
+| POST   | `/api/v1/orders`           | Calculate and create a split order        | 201     |
+| GET    | `/api/v1/orders`           | Order history, newest first, paged        | 200     |
+| GET    | `/api/v1/orders/{orderId}` | One order                                 | 200     |
+| GET    | `/health/live`             | Liveness probe (`/health` is an alias)    | 200     |
+| GET    | `/health/ready`            | Readiness probe (503 while shutting down) | 200     |
+| GET    | `/docs`                    | Swagger UI                                | 200     |
 
 ### Create an order
 
@@ -145,6 +175,7 @@ Response `201 Created` (with `Location: /api/v1/orders/{orderId}`):
 ```json
 {
   "orderId": "096eecb5-de2f-4469-be10-7490a1c222ac",
+  "partnerId": "anonymous",
   "orderType": "BUY",
   "status": "SCHEDULED",
   "currency": "USD",
@@ -209,6 +240,28 @@ curl -s -X POST http://localhost:3000/api/v1/orders \
 AAPL uses the partner's 187.43 (`priceSource: "PARTNER"`, quantity `0.800`);
 TSLA uses the default 100.00 (quantity `1.000`).
 
+### Safe retries with `Idempotency-Key`
+
+If a partner's request times out, it cannot know whether the order was created.
+Sending an `Idempotency-Key` header makes the retry safe:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/orders \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 7d1f3c2a-order-0001' \
+  -d '{ "orderType": "BUY", "totalAmount": "100", "portfolio": [{ "symbol": "AAPL", "allocation": "100" }] }'
+```
+
+| Situation                                    | Result                                                                            |
+| -------------------------------------------- | --------------------------------------------------------------------------------- |
+| First request with the key                   | Processed normally (201)                                                          |
+| Retry with the same key and the same body    | The original response is replayed, with `Idempotent-Replayed: true`; no new order |
+| Same key, different body                     | `422 IDEMPOTENCY_KEY_REUSED`                                                      |
+| Retry while the first is still being handled | `409 IDEMPOTENCY_REQUEST_IN_PROGRESS`                                             |
+| First attempt failed (e.g. 400)              | Nothing is stored; the corrected request may reuse the key                        |
+
+Keys are scoped per partner and remembered for `IDEMPOTENCY_TTL_SECONDS` (24 h).
+
 ### List order history
 
 ```bash
@@ -254,14 +307,18 @@ Every error has the same shape:
 }
 ```
 
-| Status | `code`                   | When                                                            |
-| ------ | ------------------------ | --------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`       | Any rule above fails (all problems are listed at once)          |
-| 400    | `INVALID_JSON`           | Body is not valid JSON                                          |
-| 404    | `NOT_FOUND`              | Unknown order id or route                                       |
-| 413    | `PAYLOAD_TOO_LARGE`      | Body larger than 100 kb                                         |
-| 415    | `UNSUPPORTED_MEDIA_TYPE` | POST without `Content-Type: application/json`                   |
-| 500    | `INTERNAL_ERROR`         | Unexpected failure; internal details are logged, never returned |
+| Status | `code`                            | When                                                            |
+| ------ | --------------------------------- | --------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`                | Any rule above fails (all problems are listed at once)          |
+| 400    | `INVALID_JSON`                    | Body is not valid JSON                                          |
+| 401    | `UNAUTHORIZED`                    | Missing or invalid `X-API-Key` (when auth is enabled)           |
+| 404    | `NOT_FOUND`                       | Unknown order id (or another partner's order) or route          |
+| 409    | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Same `Idempotency-Key` is still being processed                 |
+| 413    | `PAYLOAD_TOO_LARGE`               | Body larger than 100 kb                                         |
+| 415    | `UNSUPPORTED_MEDIA_TYPE`          | POST without `Content-Type: application/json`                   |
+| 422    | `IDEMPOTENCY_KEY_REUSED`          | `Idempotency-Key` reused with a different body                  |
+| 429    | `RATE_LIMITED`                    | Too many requests; see the `Retry-After` header                 |
+| 500    | `INTERNAL_ERROR`                  | Unexpected failure; internal details are logged, never returned |
 
 Every response carries an `X-Request-Id` header. A partner may send its own
 `X-Request-Id` (letters, digits, `.`, `_`, `-`, up to 64 characters) and it is echoed
@@ -282,11 +339,14 @@ measured with a monotonic clock (`performance.now()`):
   "route": "/api/v1/orders",
   "statusCode": 201,
   "durationMs": 34.53,
+  "clientIp": "::1",
+  "partnerId": "anonymous",
   "msg": "POST /api/v1/orders 201 34.53ms"
 }
 ```
 
-Request bodies are never logged, because they describe a user's investments. For
+Request bodies and API keys are never logged, because they describe a user's
+investments or grant access. For
 coloured, human-readable logs during development: `npm run dev | npx pino-pretty`.
 
 ---
@@ -330,13 +390,74 @@ daylight-saving changes. **Public holidays are not considered** (see below).
 
 ---
 
+## Production readiness
+
+### Middleware pipeline
+
+Every request passes through these layers, in this order (`src/app.ts`):
+
+| #   | Middleware                         | Applies to     | Purpose                                                              |
+| --- | ---------------------------------- | -------------- | -------------------------------------------------------------------- |
+| 1   | `apiSecurityHeaders()` (helmet)    | all            | Strict CSP (`default-src 'none'`), HSTS, `nosniff`, frame protection |
+| 2   | `connectionDrain()`                | all            | Sends `Connection: close` while shutting down                        |
+| 3   | `requestId()`                      | all            | Reuses a safe `X-Request-Id` or creates one; echoed in the response  |
+| 4   | `responseTimeLogger()`             | all            | Monotonic timer; one JSON log line per request with `durationMs`     |
+| 5   | `express.json({ limit: '100kb' })` | all            | JSON parsing with a body-size limit (413)                            |
+| 6   | `recordMountPath()`                | each router    | Keeps the route name correct in logs, including error paths          |
+| 7   | `docsSecurityHeaders()`            | `/docs`        | Looser CSP so Swagger UI can load its own scripts and styles         |
+| 8   | `noStore()`                        | `/api/v1`      | `Cache-Control: no-store` for financial data                         |
+| 9   | `apiRateLimit()`                   | `/api/v1`      | Per-IP limit (429 + `Retry-After`), before auth to slow key guessing |
+| 10  | `apiKeyAuth()`                     | `/api/v1`      | `X-API-Key` check (constant-time), sets the partner id               |
+| 11  | `requireJson()`                    | `POST /orders` | 415 unless the body is JSON                                          |
+| 12  | `idempotency()`                    | `POST /orders` | `Idempotency-Key` replay / conflict handling                         |
+| 13  | `notFound()`                       | unmatched      | 404 in the standard error format                                     |
+| 14  | `errorHandler()`                   | all errors     | One error format; unexpected errors become a generic 500             |
+
+### Security controls
+
+- **Authentication:** per-partner API keys (`X-API-Key`), compared as SHA-256 digests
+  with `timingSafeEqual`; several keys per partner for rotation; keys never logged.
+- **Authorisation:** orders belong to the partner that created them. Another partner's
+  order returns 404, not 403, so order ids cannot be probed.
+- **Abuse protection:** rate limiting, 100 kb body limit, strict input validation that
+  rejects unknown fields, server header/request timeouts against slow clients.
+- **Headers:** helmet security headers; `x-powered-by` removed; `no-store` caching.
+- **Proxies:** `X-Forwarded-For` is ignored unless `TRUST_PROXY` declares the proxies,
+  so the client IP used for rate limiting cannot be spoofed.
+- **Errors:** internals (messages, stacks) are logged, never returned to clients.
+- **CORS:** deliberately not enabled. Clients are partner servers, not browsers, so no
+  cross-origin browser access is granted.
+
+### Operations
+
+- **Health probes:** `/health/live` (process up) and `/health/ready` (accepting traffic).
+- **Graceful shutdown:** on `SIGTERM`, readiness turns 503, new connections are refused,
+  idle keep-alive sockets are closed, in-flight requests finish; forced exit after 10 s.
+- **Fail-fast configuration:** invalid settings, or production without API keys, stop
+  the process at startup with a clear message.
+- **Container:** multi-stage `Dockerfile`; runtime image has production dependencies
+  only, runs as the unprivileged `node` user, with a `HEALTHCHECK`.
+- **CI** (`.github/workflows/ci.yml`): format check, lint, type-check, tests with
+  coverage, build and production-dependency audit on Node 22 and 24, then builds the
+  image and smoke-tests it (startup without keys fails, 401 without a key, a real order).
+
+### What this POC still keeps in memory
+
+Rate-limit counters, idempotency records and orders live in process memory, so they are
+per instance and lost on restart. Running several instances needs a shared store
+(PostgreSQL for orders, Redis for rate limits and idempotency) — each sits behind an
+interface or middleware option, so the change is local. See ANSWERS.md.
+
+---
+
 ## Architecture
 
 Layered (MVC at the HTTP edge), with business logic kept out of controllers:
 
 ```text
 HTTP request
-  → middlewares   request id · response-time logging · JSON body parsing
+  → middlewares   security headers · request id · timing · JSON parsing
+                  · rate limit · API-key auth · idempotency
   → routes        map method + path to a controller
   → controllers   validate input (Zod) · call the service · shape the response
   → services      OrderService (use cases)
@@ -360,9 +481,9 @@ src/
 ├── docs/                  # OpenAPI document
 ├── domain/                # Order types and enums
 ├── errors/                # AppError, ValidationError, NotFoundError
-├── lib/                   # decimal.js setup, clock, logger
-├── middlewares/           # request id, response time, JSON-only, 404, errors
-├── repositories/          # OrderRepository interface + in-memory implementation
+├── lib/                   # decimal.js setup, clock, logger, lifecycle (draining)
+├── middlewares/           # security, auth, rate limit, idempotency, timing, errors…
+├── repositories/          # order + idempotency store interfaces, in-memory versions
 ├── routes/                # orders, health, docs
 ├── services/              # order service, calculator, splitter, quantity, price, scheduler
 └── validators/            # Zod schemas and the parse helper
@@ -378,7 +499,7 @@ tests/
 ## Testing
 
 ```bash
-npm test                # 174 tests
+npm test                # 235 tests
 npm run test:coverage   # coverage report in coverage/
 ```
 
@@ -408,6 +529,10 @@ The tests focus on behaviour and edge cases:
   of stored data, empty after "restart".
 - **HTTP** – 201/200/400/404/413/415/500 responses, Location header, response-time log
   lines, request bodies not logged, request-id handling.
+- **Production controls** – authentication (missing/wrong/rotated keys, partner
+  isolation, keys not logged), rate limiting (429, `Retry-After`, auth failures counted),
+  idempotency (replay, key reuse, concurrent retry, failures not stored), security
+  headers, proxy trust, readiness while draining.
 
 ---
 
@@ -423,6 +548,8 @@ The tests focus on behaviour and edge cases:
 | `luxon`              | Time-zone and daylight-saving-aware date calculations for the scheduler |
 | `pino`               | Fast structured JSON logging                                            |
 | `swagger-ui-express` | Serves the interactive API documentation at `/docs`                     |
+| `helmet`             | Security headers (CSP, HSTS, nosniff, frame protection)                 |
+| `express-rate-limit` | Per-client request limits with standard `RateLimit` headers             |
 | `dotenv`             | Loads an optional `.env` file                                           |
 
 **Development**
@@ -456,4 +583,5 @@ The full list, with reasoning, is in [ANSWERS.md](ANSWERS.md). In short:
 - **SELL does not check holdings**, because holdings are not part of the input.
 - **In-memory storage** by design: history is lost on restart, and it is per process
   (not shared between multiple instances).
-- **No authentication** in this POC; see ANSWERS.md for production controls.
+- **Single-instance state:** orders, rate-limit counters and idempotency records are in
+  memory; see [Production readiness](#production-readiness).
