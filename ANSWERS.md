@@ -188,7 +188,7 @@ change to run it for real, grouped by concern. The target architecture is drawn 
 - A repeatable load test (`npm run perf`) with documented results: a 2-stock order costs
   ~0.15 ms of server time, ~8,000 creates/s from one process at 50 concurrent connections
   (p99 11 ms) on a 4-vCPU VM.
-- A non-root Docker image without package managers; CI with lint, type-check, 368 tests
+- A non-root Docker image without package managers; CI with lint, type-check, 370 tests
   (unit, integration, OpenAPI contract and real-process end-to-end), coverage, build,
   dependency audit, image smoke test, Trivy image scan, gitleaks secret scan, CodeQL and
   Dependabot. The threat model is in [SECURITY.md](SECURITY.md); the proposed production
