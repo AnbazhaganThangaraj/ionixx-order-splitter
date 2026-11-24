@@ -1,4 +1,5 @@
 import type { AppConfig } from '../config/app.config';
+import { ERROR_CODES } from '../errors/error-codes';
 
 const decimalString = (description: string, example: string): Record<string, unknown> => ({
   oneOf: [{ type: 'string', pattern: '^\\d+(\\.\\d+)?$' }, { type: 'number' }],
@@ -20,6 +21,9 @@ const errorResponse = (description: string, code: string): Record<string, unknow
 });
 
 const secured = [{ ApiKeyAuth: [] }];
+/** Response number formats: plain decimal strings; money always has exactly 2 decimals. */
+const DECIMAL = '^\\d+(\\.\\d+)?$';
+const MONEY = '^\\d+\\.\\d{2}$';
 
 /** OpenAPI 3.1 contract, served at /docs (UI) and /docs/openapi.json (raw). */
 export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown> => ({
@@ -136,28 +140,12 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         responses: {
           '200': {
             description: 'A page of orders',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    data: { type: 'array', items: { $ref: '#/components/schemas/Order' } },
-                    pagination: {
-                      type: 'object',
-                      properties: {
-                        limit: { type: 'integer' },
-                        offset: { type: 'integer' },
-                        total: { type: 'integer' },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/OrderPage' } } },
           },
           '400': errorResponse('Invalid query parameters', 'VALIDATION_ERROR'),
           '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
           '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
+          '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
     },
@@ -183,6 +171,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
           '404': errorResponse('No order with this id for your partner account', 'NOT_FOUND'),
           '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
+          '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
     },
@@ -190,7 +179,14 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       get: {
         tags: ['Health'],
         summary: 'Liveness probe (also available as /health)',
-        responses: { '200': { description: 'Process is up' } },
+        responses: {
+          '200': {
+            description: 'Process is up',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/HealthLive' } },
+            },
+          },
+        },
       },
     },
     '/health/ready': {
@@ -198,8 +194,18 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         tags: ['Health'],
         summary: 'Readiness probe',
         responses: {
-          '200': { description: 'Ready to receive traffic' },
-          '503': { description: 'Shutting down; stop sending traffic' },
+          '200': {
+            description: 'Ready to receive traffic',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/HealthReady' } },
+            },
+          },
+          '503': {
+            description: 'Shutting down; stop sending traffic',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/HealthReady' } },
+            },
+          },
         },
       },
     },
@@ -248,24 +254,38 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       },
       OrderLine: {
         type: 'object',
+        additionalProperties: false,
+        required: [
+          'symbol',
+          'allocationPercent',
+          'allocatedAmount',
+          'price',
+          'priceSource',
+          'quantity',
+          'estimatedValue',
+          'residualAmount',
+        ],
         properties: {
-          symbol: { type: 'string' },
-          allocationPercent: { type: 'string', example: '60' },
-          allocatedAmount: { type: 'string', example: '60.00' },
-          price: { type: 'string', example: '100.00' },
+          symbol: { type: 'string', example: 'AAPL' },
+          allocationPercent: { type: 'string', pattern: DECIMAL, example: '60' },
+          allocatedAmount: { type: 'string', pattern: MONEY, example: '60.00' },
+          price: { type: 'string', pattern: DECIMAL, example: '100.00' },
           priceSource: { type: 'string', enum: ['PARTNER', 'DEFAULT'] },
           quantity: {
             type: 'string',
+            pattern: DECIMAL,
             example: '0.600',
             description: 'Shares, rounded down to the configured precision.',
           },
           estimatedValue: {
             type: 'string',
+            pattern: MONEY,
             example: '60.00',
             description: 'quantity x price, in cents.',
           },
           residualAmount: {
             type: 'string',
+            pattern: MONEY,
             example: '0.00',
             description: 'Cash left over because the quantity was rounded down.',
           },
@@ -273,25 +293,48 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       },
       Order: {
         type: 'object',
+        additionalProperties: false,
+        required: [
+          'orderId',
+          'partnerId',
+          'orderType',
+          'status',
+          'currency',
+          'totalAmount',
+          'quantityPrecision',
+          'lines',
+          'totals',
+          'execution',
+          'warnings',
+          'createdAt',
+        ],
         properties: {
           orderId: { type: 'string', format: 'uuid' },
           partnerId: { type: 'string', example: 'partner-a' },
           orderType: { type: 'string', enum: ['BUY', 'SELL'] },
           status: { type: 'string', enum: ['SCHEDULED'] },
           currency: { type: 'string', enum: ['USD'] },
-          totalAmount: { type: 'string', example: '100.00' },
-          quantityPrecision: { type: 'integer', example: 3 },
-          lines: { type: 'array', items: { $ref: '#/components/schemas/OrderLine' } },
+          totalAmount: { type: 'string', pattern: MONEY, example: '100.00' },
+          quantityPrecision: { type: 'integer', minimum: 0, maximum: 10, example: 3 },
+          lines: {
+            type: 'array',
+            minItems: 1,
+            items: { $ref: '#/components/schemas/OrderLine' },
+          },
           totals: {
             type: 'object',
+            additionalProperties: false,
+            required: ['allocatedAmount', 'estimatedValue', 'residualAmount'],
             properties: {
-              allocatedAmount: { type: 'string' },
-              estimatedValue: { type: 'string' },
-              residualAmount: { type: 'string' },
+              allocatedAmount: { type: 'string', pattern: MONEY },
+              estimatedValue: { type: 'string', pattern: MONEY },
+              residualAmount: { type: 'string', pattern: MONEY },
             },
           },
           execution: {
             type: 'object',
+            additionalProperties: false,
+            required: ['executeAt', 'timeZone', 'reason'],
             properties: {
               executeAt: {
                 type: 'string',
@@ -309,18 +352,66 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           createdAt: { type: 'string', format: 'date-time' },
         },
       },
+      OrderPage: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data', 'pagination'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/Order' } },
+          pagination: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['limit', 'offset', 'total'],
+            properties: {
+              limit: { type: 'integer', minimum: 1, maximum: 100 },
+              offset: { type: 'integer', minimum: 0 },
+              total: { type: 'integer', minimum: 0 },
+            },
+          },
+        },
+      },
+      HealthLive: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['status', 'uptimeSeconds', 'timestamp'],
+        properties: {
+          status: { type: 'string', enum: ['ok'] },
+          uptimeSeconds: { type: 'integer', minimum: 0 },
+          timestamp: { type: 'string', format: 'date-time' },
+        },
+      },
+      HealthReady: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['status', 'timestamp'],
+        properties: {
+          status: { type: 'string', enum: ['ready', 'draining'] },
+          timestamp: { type: 'string', format: 'date-time' },
+        },
+      },
       Error: {
         type: 'object',
+        additionalProperties: false,
+        required: ['error', 'requestId'],
         properties: {
           error: {
             type: 'object',
+            additionalProperties: false,
+            required: ['code', 'message', 'details'],
             properties: {
-              code: { type: 'string' },
-              message: { type: 'string' },
+              code: {
+                type: 'string',
+                enum: [...ERROR_CODES],
+                description: 'Stable, machine-readable error code. Branch on this, not on message.',
+              },
+              message: { type: 'string', description: 'Human-readable explanation and guidance.' },
               details: {
                 type: 'array',
+                description: 'Per-field problems (validation errors); empty otherwise.',
                 items: {
                   type: 'object',
+                  additionalProperties: false,
+                  required: ['path', 'message'],
                   properties: { path: { type: 'string' }, message: { type: 'string' } },
                 },
               },
