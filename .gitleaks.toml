@@ -1,0 +1,8 @@
+# Secret scanning configuration (used by the gitleaks CI job).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake keys used by tests, CI smoke tests and documentation examples; not real secrets"
+paths = ['''^tests/''']
+regexes = ['''replace-with-a-long-random-key''', '''ci-smoke-test-key''']

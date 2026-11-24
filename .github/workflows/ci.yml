@@ -68,6 +68,22 @@ jobs:
             -d '{"orderType":"BUY","totalAmount":"100","portfolio":[{"symbol":"AAPL","allocation":"60"},{"symbol":"TSLA","allocation":"40"}]}' \
             | tee /dev/stderr | grep -q '"quantity":"0.600"'
           test "$(docker inspect --format '{{.Config.User}}' ionixx-order-splitter:ci)" = "node"
+      - name: Scan image for vulnerabilities (Trivy)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            ionixx-order-splitter:ci
       - name: Container logs
         if: always()
         run: docker logs app || true
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
