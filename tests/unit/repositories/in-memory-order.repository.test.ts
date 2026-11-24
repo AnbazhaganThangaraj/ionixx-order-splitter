@@ -120,3 +120,35 @@ describe('InMemoryOrderRepository', () => {
     await expect(afterRestart.list(page())).resolves.toEqual({ items: [], total: 0 });
   });
 });
+
+describe('InMemoryOrderRepository paging at scale', () => {
+  it('pages correctly across partners and types with many orders', async () => {
+    const repository = new InMemoryOrderRepository();
+    const mine: string[] = [];
+    for (let i = 0; i < 2_000; i++) {
+      const orderType = i % 3 === 0 ? 'SELL' : 'BUY';
+      const partnerId = i % 2 === 0 ? 'partner-a' : 'partner-b';
+      const order = makeOrder({ orderType, partnerId });
+      await repository.save(order);
+      if (partnerId === 'partner-a' && orderType === 'SELL') mine.push(order.orderId);
+    }
+    const newestFirst = [...mine].reverse();
+
+    const page = await repository.list({
+      partnerId: 'partner-a',
+      orderType: 'SELL',
+      limit: 25,
+      offset: 50,
+    });
+    expect(page.total).toBe(mine.length);
+    expect(page.items.map((o) => o.orderId)).toEqual(newestFirst.slice(50, 75));
+
+    const lastPage = await repository.list({
+      partnerId: 'partner-a',
+      orderType: 'SELL',
+      limit: 25,
+      offset: mine.length - 10,
+    });
+    expect(lastPage.items.map((o) => o.orderId)).toEqual(newestFirst.slice(-10));
+  });
+});

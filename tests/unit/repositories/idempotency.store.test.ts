@@ -65,3 +65,18 @@ describe('InMemoryIdempotencyStore', () => {
     await expect(store.begin('p:k1', 'hash-a')).resolves.toEqual({ kind: 'replay', response });
   });
 });
+
+describe('InMemoryIdempotencyStore expiry order', () => {
+  it('expires old records while keeping newer ones', async () => {
+    let now = 0;
+    const store = new InMemoryIdempotencyStore({ now: () => new Date(now) }, 1_000);
+
+    await store.begin('p:old', 'h');
+    now = 600;
+    await store.begin('p:new', 'h');
+    now = 1_000; // "old" has expired, "new" has not
+
+    await expect(store.begin('p:old', 'other')).resolves.toEqual({ kind: 'started' });
+    await expect(store.begin('p:new', 'h')).resolves.toEqual({ kind: 'in-progress' });
+  });
+});
