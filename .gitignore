@@ -4,6 +4,3 @@ coverage/
 .env
 *.log
 .DS_Store
-
-# Kept locally, not committed
-ANSWERS.md
