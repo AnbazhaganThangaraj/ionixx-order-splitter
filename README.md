@@ -549,13 +549,13 @@ npm run test:coverage   # coverage report in coverage/
 
 ### Coverage
 
-![Jest coverage report: 99% statements, 87% branches, 100% functions, 99% lines](docs/images/coverage-report.png)
+![Jest coverage report: 99.25% statements, 89.47% branches, 99.28% functions, 99.34% lines](docs/images/coverage-report.png)
 
-Every function is covered, and over 99% of statements and lines. The uncovered
-branches are mostly defensive fallbacks (for example, default values for settings that
-are always present after validation, and body-parser error types that Express does not
-produce in practice). Run `npm run test:coverage` and open `coverage/lcov-report/index.html`
-to see the current report.
+Over 99% of statements, functions and lines are covered, across 318 tests. The
+uncovered branches are mostly defensive fallbacks: default values for settings that are
+always present after validation, `??` guards in type-narrowing code, and request-reading
+error types that Express does not produce in practice. Run `npm run test:coverage` and
+open `coverage/lcov-report/index.html` to see the current report.
 
 ### What the tests cover
 
