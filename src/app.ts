@@ -7,6 +7,11 @@ import { createLogger, type Logger } from './lib/logger';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFound } from './middlewares/not-found.middleware';
 import { requestId } from './middlewares/request-id.middleware';
+import {
+  apiSecurityHeaders,
+  docsSecurityHeaders,
+  noStore,
+} from './middlewares/security.middleware';
 import { recordMountPath, responseTimeLogger } from './middlewares/response-time.middleware';
 import { InMemoryOrderRepository } from './repositories/in-memory-order.repository';
 import type { OrderRepository } from './repositories/order.repository';
@@ -45,16 +50,21 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
 
   const app = express();
   app.disable('x-powered-by');
+  // Behind N proxies, req.ip must be the client's address (used by rate limiting and logs),
+  // taken from X-Forwarded-For. 0 means "no proxy": the header is ignored and cannot be spoofed.
+  app.set('trust proxy', config.http.trustProxyHops === 0 ? false : config.http.trustProxyHops);
 
+  app.use(apiSecurityHeaders());
   app.use(requestId());
   app.use(responseTimeLogger(logger));
   app.use(express.json({ limit: '100kb' }));
 
   app.use('/health', recordMountPath(), createHealthRouter());
-  app.use('/docs', recordMountPath(), createDocsRouter(config));
+  app.use('/docs', recordMountPath(), docsSecurityHeaders(), createDocsRouter(config));
   app.use(
     '/api/v1/orders',
     recordMountPath(),
+    noStore(),
     createOrderRouter(new OrderController(orderService)),
   );
 

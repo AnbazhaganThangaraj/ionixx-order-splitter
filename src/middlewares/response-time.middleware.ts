@@ -46,6 +46,7 @@ export const responseTimeLogger =
         route: routeOf(req, res.locals),
         statusCode: res.statusCode,
         durationMs,
+        clientIp: req.ip,
       };
       const message = `${req.method} ${entry.route} ${res.statusCode} ${durationMs}ms`;
 

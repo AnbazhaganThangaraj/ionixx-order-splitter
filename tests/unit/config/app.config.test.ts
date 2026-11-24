@@ -37,6 +37,11 @@ describe('loadConfig', () => {
     });
   });
 
+  it('reads the number of trusted proxies', () => {
+    expect(loadConfig({}).http.trustProxyHops).toBe(0);
+    expect(loadConfig({ TRUST_PROXY: '2' }).http.trustProxyHops).toBe(2);
+  });
+
   it('treats empty values as unset', () => {
     expect(loadConfig({ QUANTITY_PRECISION: '' }).order.quantityPrecision).toBe(3);
   });
@@ -53,6 +58,8 @@ describe('loadConfig', () => {
     ['MARKET_TIMEZONE', 'Mars/Olympus'],
     ['MARKET_OPEN_TIME', '9:30'],
     ['MARKET_CLOSE_TIME', '25:00'],
+    ['TRUST_PROXY', '-1'],
+    ['TRUST_PROXY', 'yes'],
   ])('fails fast when %s=%s', (key, value) => {
     expect(() => loadConfig({ [key]: value })).toThrow(ConfigError);
   });

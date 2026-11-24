@@ -40,6 +40,7 @@ const envSchema = z
       .default('America/New_York'),
     MARKET_OPEN_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('09:30'),
     MARKET_CLOSE_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('16:00'),
+    TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
   })
   .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
@@ -62,6 +63,10 @@ export interface AppConfig {
     readonly timeZone: string;
     readonly openTime: string;
     readonly closeTime: string;
+  };
+  readonly http: {
+    /** Number of reverse proxies / load balancers in front of the app (0 = none). */
+    readonly trustProxyHops: number;
   };
 }
 
@@ -101,6 +106,9 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
       timeZone: parsed.MARKET_TIMEZONE,
       openTime: parsed.MARKET_OPEN_TIME,
       closeTime: parsed.MARKET_CLOSE_TIME,
+    },
+    http: {
+      trustProxyHops: parsed.TRUST_PROXY,
     },
   };
 };

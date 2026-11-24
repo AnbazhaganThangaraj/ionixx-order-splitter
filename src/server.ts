@@ -31,6 +31,13 @@ const start = (): void => {
     );
   });
 
+  // Slow-client protection (slowloris): cap how long headers and whole requests may take.
+  server.headersTimeout = 66_000;
+  server.requestTimeout = 30_000;
+  // Keep idle connections open longer than a typical load balancer's idle timeout (60s),
+  // otherwise the LB may reuse a socket Node has just closed and return a 502.
+  server.keepAliveTimeout = 65_000;
+
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'Shutting down');
     server.close(() => process.exit(0));
