@@ -20,6 +20,7 @@ describe('Orders API', () => {
       expect(response.headers.location).toBe(`${ORDERS}/${response.body.orderId}`);
       expect(response.body).toEqual({
         orderId: expect.stringMatching(UUID),
+        partnerId: 'anonymous',
         orderType: 'BUY',
         status: 'SCHEDULED',
         currency: 'USD',

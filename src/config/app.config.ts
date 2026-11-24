@@ -12,6 +12,50 @@ const isValidTimeZone = (zone: string): boolean => {
   }
 };
 
+const PARTNER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MIN_API_KEY_LENGTH = 24;
+
+export interface ApiKeyEntry {
+  readonly partnerId: string;
+  readonly key: string;
+}
+
+/**
+ * API_KEYS format: "partnerId:key,partnerId:key". Each partner can hold several keys
+ * (useful for rotation). Keys must be long random strings and unique.
+ */
+const parseApiKeys = (value: string, ctx: z.RefinementCtx): ApiKeyEntry[] => {
+  const entries: ApiKeyEntry[] = [];
+  const seenKeys = new Set<string>();
+  value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .forEach((part, index) => {
+      const separator = part.indexOf(':');
+      const partnerId = separator > 0 ? part.slice(0, separator) : '';
+      const key = separator > 0 ? part.slice(separator + 1) : '';
+      // Never echo the key itself in error messages.
+      if (!PARTNER_ID.test(partnerId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `entry ${index + 1} must look like "partnerId:key"`,
+        });
+      } else if (key.length < MIN_API_KEY_LENGTH) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `key for "${partnerId}" must be at least ${MIN_API_KEY_LENGTH} characters`,
+        });
+      } else if (seenKeys.has(key)) {
+        ctx.addIssue({ code: 'custom', message: `key for "${partnerId}" is used more than once` });
+      } else {
+        seenKeys.add(key);
+        entries.push({ partnerId, key });
+      }
+    });
+  return entries;
+};
+
 const toMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
   return (hours ?? 0) * 60 + (minutes ?? 0);
@@ -41,10 +85,15 @@ const envSchema = z
     MARKET_OPEN_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('09:30'),
     MARKET_CLOSE_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('16:00'),
     TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
+    API_KEYS: z.string().transform(parseApiKeys).default([]),
   })
   .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
     path: ['MARKET_OPEN_TIME'],
+  })
+  .refine((env) => env.NODE_ENV !== 'production' || env.API_KEYS.length > 0, {
+    message: 'API_KEYS is required when NODE_ENV=production (authentication cannot be disabled)',
+    path: ['API_KEYS'],
   });
 
 export interface AppConfig {
@@ -63,6 +112,10 @@ export interface AppConfig {
     readonly timeZone: string;
     readonly openTime: string;
     readonly closeTime: string;
+  };
+  readonly auth: {
+    /** Empty = authentication disabled (only allowed outside production). */
+    readonly apiKeys: readonly ApiKeyEntry[];
   };
   readonly http: {
     /** Number of reverse proxies / load balancers in front of the app (0 = none). */
@@ -106,6 +159,9 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
       timeZone: parsed.MARKET_TIMEZONE,
       openTime: parsed.MARKET_OPEN_TIME,
       closeTime: parsed.MARKET_CLOSE_TIME,
+    },
+    auth: {
+      apiKeys: parsed.API_KEYS,
     },
     http: {
       trustProxyHops: parsed.TRUST_PROXY,

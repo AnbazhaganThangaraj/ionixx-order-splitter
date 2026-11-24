@@ -20,15 +20,18 @@ export class InMemoryOrderRepository implements OrderRepository {
     return Promise.resolve();
   }
 
-  findById(orderId: string): Promise<Order | undefined> {
+  findById(partnerId: string, orderId: string): Promise<Order | undefined> {
     const order = this.orders.get(orderId);
-    return Promise.resolve(order === undefined ? undefined : structuredClone(order));
+    return Promise.resolve(
+      order === undefined || order.partnerId !== partnerId ? undefined : structuredClone(order),
+    );
   }
 
-  list({ limit, offset, orderType }: ListOrdersFilter): Promise<OrderPage> {
-    const newestFirst = [...this.orders.values()].reverse();
-    const matching =
-      orderType === undefined ? newestFirst : newestFirst.filter((o) => o.orderType === orderType);
+  list({ partnerId, limit, offset, orderType }: ListOrdersFilter): Promise<OrderPage> {
+    const matching = [...this.orders.values()]
+      .reverse()
+      .filter((o) => o.partnerId === partnerId)
+      .filter((o) => orderType === undefined || o.orderType === orderType);
 
     return Promise.resolve({
       items: matching.slice(offset, offset + limit).map((order) => structuredClone(order)),

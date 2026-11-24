@@ -42,6 +42,52 @@ describe('loadConfig', () => {
     expect(loadConfig({ TRUST_PROXY: '2' }).http.trustProxyHops).toBe(2);
   });
 
+  describe('API_KEYS', () => {
+    const key = (prefix: string) => `${prefix}-0123456789abcdefghijklmn`;
+
+    it('is empty (auth disabled) by default outside production', () => {
+      expect(loadConfig({}).auth.apiKeys).toEqual([]);
+    });
+
+    it('parses partner:key pairs, allowing several keys per partner', () => {
+      const config = loadConfig({
+        API_KEYS: ` alpha:${key('a1')}, alpha:${key('a2')} ,beta_2:${key('b')} `,
+      });
+      expect(config.auth.apiKeys).toEqual([
+        { partnerId: 'alpha', key: key('a1') },
+        { partnerId: 'alpha', key: key('a2') },
+        { partnerId: 'beta_2', key: key('b') },
+      ]);
+    });
+
+    it.each([
+      ['no separator', 'justakeywithoutpartner0123456789'],
+      ['empty partner', `:${'k'.repeat(30)}`],
+      ['short key', 'alpha:tooshort'],
+      ['bad partner id', `al pha:${'k'.repeat(30)}`],
+      ['duplicate key', `a:${'k'.repeat(30)},b:${'k'.repeat(30)}`],
+    ])('rejects %s', (_label, value) => {
+      expect(() => loadConfig({ API_KEYS: value })).toThrow(ConfigError);
+    });
+
+    it('never includes the key itself in error messages', () => {
+      try {
+        loadConfig({ API_KEYS: 'alpha:secret-but-short' });
+      } catch (error) {
+        expect((error as ConfigError).message).not.toContain('secret-but-short');
+        return;
+      }
+      throw new Error('expected ConfigError');
+    });
+
+    it('is required in production', () => {
+      expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/API_KEYS is required/);
+      expect(
+        loadConfig({ NODE_ENV: 'production', API_KEYS: `alpha:${key('a')}` }).auth.apiKeys,
+      ).toHaveLength(1);
+    });
+  });
+
   it('treats empty values as unset', () => {
     expect(loadConfig({ QUANTITY_PRECISION: '' }).order.quantityPrecision).toBe(3);
   });

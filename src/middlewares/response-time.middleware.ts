@@ -47,6 +47,7 @@ export const responseTimeLogger =
         statusCode: res.statusCode,
         durationMs,
         clientIp: req.ip,
+        partnerId: typeof res.locals.partnerId === 'string' ? res.locals.partnerId : undefined,
       };
       const message = `${req.method} ${entry.route} ${res.statusCode} ${durationMs}ms`;
 

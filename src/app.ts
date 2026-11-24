@@ -4,6 +4,7 @@ import type { AppConfig } from './config/app.config';
 import { OrderController } from './controllers/order.controller';
 import { type Clock, systemClock } from './lib/clock';
 import { createLogger, type Logger } from './lib/logger';
+import { apiKeyAuth } from './middlewares/api-key-auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFound } from './middlewares/not-found.middleware';
 import { requestId } from './middlewares/request-id.middleware';
@@ -65,6 +66,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     '/api/v1/orders',
     recordMountPath(),
     noStore(),
+    apiKeyAuth(config.auth.apiKeys),
     createOrderRouter(new OrderController(orderService)),
   );
 

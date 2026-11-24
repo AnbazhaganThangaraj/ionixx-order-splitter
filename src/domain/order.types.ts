@@ -34,6 +34,8 @@ export interface OrderTotals {
 
 export interface Order {
   readonly orderId: string;
+  /** Partner that created the order; orders are only visible to that partner. */
+  readonly partnerId: string;
   readonly orderType: OrderType;
   readonly status: OrderStatus;
   readonly currency: Currency;

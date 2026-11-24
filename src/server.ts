@@ -17,6 +17,13 @@ const start = (): void => {
   }
 
   const logger = createLogger(config.logLevel);
+  if (config.auth.apiKeys.length === 0) {
+    logger.warn(
+      'API key authentication is DISABLED because API_KEYS is not set. ' +
+        'Allowed for local development only; production refuses to start without keys.',
+    );
+  }
+
   const app = createApp(config, { logger });
 
   const server = app.listen(config.port, () => {
@@ -25,6 +32,7 @@ const start = (): void => {
         port: config.port,
         quantityPrecision: config.order.quantityPrecision,
         defaultStockPrice: config.order.defaultStockPrice,
+        authenticatedPartners: [...new Set(config.auth.apiKeys.map((k) => k.partnerId))],
         market: config.market,
       },
       `Order splitter API listening on http://localhost:${config.port}`,

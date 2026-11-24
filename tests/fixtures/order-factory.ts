@@ -4,6 +4,7 @@ import type { Order } from '../../src/domain/order.types';
 
 export const makeOrder = (overrides: Partial<Order> & { orderType?: OrderType } = {}): Order => ({
   orderId: randomUUID(),
+  partnerId: 'partner-a',
   orderType: 'BUY',
   status: 'SCHEDULED',
   currency: 'USD',
