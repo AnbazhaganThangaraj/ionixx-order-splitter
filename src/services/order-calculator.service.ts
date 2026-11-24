@@ -1,6 +1,6 @@
 import type { OrderLine, OrderTotals } from '../domain/order.types';
 import { Decimal } from '../lib/decimal';
-import type { CreateOrderCommand } from '../validators/order.validator';
+import type { CreateOrderCommand } from '../domain/order.commands';
 import { splitAmount } from './amount-splitter';
 import { resolvePrice } from './price-resolver';
 import { calculateQuantity } from './quantity-calculator';
@@ -12,12 +12,23 @@ export interface OrderCalculatorOptions {
 }
 
 export interface OrderCalculation {
+  /** totalAmount formatted to money precision. */
+  readonly totalAmount: string;
+  /** Precision the quantities were calculated at (recorded on the order). */
+  readonly quantityPrecision: number;
   readonly lines: OrderLine[];
   readonly totals: OrderTotals;
   readonly warnings: string[];
+  /** Lines whose quantity rounded down to zero, with the reason (also in warnings). */
+  readonly untradableLines: { readonly index: number; readonly message: string }[];
 }
 
-type CalculationInput = Pick<CreateOrderCommand, 'totalAmount' | 'portfolio'>;
+export type CalculationInput = Pick<CreateOrderCommand, 'totalAmount' | 'portfolio'>;
+
+/** Port used by the order service; OrderCalculator is the implementation. */
+export interface PortfolioCalculator {
+  calculate(input: CalculationInput): OrderCalculation;
+}
 
 /**
  * Pure calculation: portfolio + amount -> per-stock amount, price and quantity.
@@ -27,7 +38,7 @@ type CalculationInput = Pick<CreateOrderCommand, 'totalAmount' | 'portfolio'>;
  * portfolio weight. Holdings are not part of the input, so SELL quantities are not
  * checked against what the user owns (documented assumption).
  */
-export class OrderCalculator {
+export class OrderCalculator implements PortfolioCalculator {
   private readonly defaultPrice: Decimal;
 
   constructor(private readonly options: OrderCalculatorOptions) {
@@ -42,7 +53,7 @@ export class OrderCalculator {
       moneyPrecision,
     );
 
-    const warnings: string[] = [];
+    const untradableLines: { index: number; message: string }[] = [];
     let totalValue = new Decimal(0);
     let totalResidual = new Decimal(0);
 
@@ -60,11 +71,13 @@ export class OrderCalculator {
       totalResidual = totalResidual.plus(residualAmount);
 
       if (quantity.isZero()) {
-        warnings.push(
-          `${item.symbol}: allocated amount ${this.money(allocatedAmount)} is too small to trade any ` +
+        untradableLines.push({
+          index,
+          message:
+            `${item.symbol}: allocated amount ${this.money(allocatedAmount)} is too small to trade any ` +
             `shares at ${this.price(price)} with ${quantityPrecision} decimal places; ` +
             'the full amount is reported as residual cash',
-        );
+        });
       }
 
       return {
@@ -80,13 +93,16 @@ export class OrderCalculator {
     });
 
     return {
+      totalAmount: this.money(totalAmount),
+      quantityPrecision,
       lines,
       totals: {
         allocatedAmount: this.money(totalAmount),
         estimatedValue: this.money(totalValue),
         residualAmount: this.money(totalResidual),
       },
-      warnings,
+      warnings: untradableLines.map((line) => line.message),
+      untradableLines,
     };
   }
 

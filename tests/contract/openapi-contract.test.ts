@@ -118,6 +118,15 @@ describe('OpenAPI contract', () => {
       expectToMatchContract(response, 'post', ORDERS);
     });
 
+    it('422: order would not trade anything', async () => {
+      const { app } = buildTestApp();
+      const response = await request(app)
+        .post(ORDERS)
+        .send({ ...briefExampleRequest, totalAmount: '0.01' });
+      expect(response.body.error.code).toBe('ORDER_NOT_EXECUTABLE');
+      expectToMatchContract(response, 'post', ORDERS);
+    });
+
     it('422: Idempotency-Key reused with another body', async () => {
       const { app } = buildTestApp();
       await request(app).post(ORDERS).set('Idempotency-Key', 'c-2').send(briefExampleRequest);

@@ -3,7 +3,7 @@ import type { RequestHandler } from 'express';
 import type { ApiKeyEntry } from '../config/app.config';
 import { AppError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
-import { getRequestId } from './request-id.middleware';
+import { getRequestId } from '../lib/request-context';
 
 export const API_KEY_HEADER = 'x-api-key';
 
@@ -69,12 +69,4 @@ export const apiKeyAuth = (apiKeys: readonly ApiKeyEntry[], audit: AuditLog): Re
     res.locals.partnerId = partnerId;
     next();
   };
-};
-
-export const getPartnerId = (locals: Record<string, unknown>): string => {
-  if (typeof locals.partnerId !== 'string') {
-    // Programming error: route mounted without apiKeyAuth.
-    throw new Error('partnerId missing: apiKeyAuth middleware not applied');
-  }
-  return locals.partnerId;
 };

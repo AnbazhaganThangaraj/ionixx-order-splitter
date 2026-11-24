@@ -285,6 +285,53 @@ describe('Error messages by use case', () => {
     });
   });
 
+  describe('business rules', () => {
+    it('order too small to trade anything: 422 with the reason per stock', async () => {
+      const response = await post({ ...briefExampleRequest, totalAmount: '0.01' });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error).toMatchObject({
+        code: 'ORDER_NOT_EXECUTABLE',
+        message:
+          'Order would not trade anything: no stock receives enough of totalAmount to buy the ' +
+          'smallest allowed quantity (3 decimal places). Increase totalAmount.',
+      });
+      expect(response.body.error.details).toEqual([
+        {
+          path: 'portfolio[0]',
+          message:
+            'AAPL: allocated amount 0.01 is too small to trade any shares at 100.00 with 3 decimal places; the full amount is reported as residual cash',
+        },
+        {
+          path: 'portfolio[1]',
+          message:
+            'TSLA: allocated amount 0.00 is too small to trade any shares at 100.00 with 3 decimal places; the full amount is reported as residual cash',
+        },
+      ]);
+    });
+
+    it('is not stored or listed', async () => {
+      const { app } = buildTestApp();
+      await request(app)
+        .post(ORDERS)
+        .send({ ...briefExampleRequest, totalAmount: '0.01' });
+      expect((await request(app).get(ORDERS)).body.pagination.total).toBe(0);
+    });
+
+    it('an order where only some stocks are too small is accepted with warnings', async () => {
+      const response = await post({
+        ...briefExampleRequest,
+        totalAmount: '1.00',
+        portfolio: [
+          { symbol: 'AAPL', allocation: '99', marketPrice: '0.50' },
+          { symbol: 'TINY', allocation: '1', marketPrice: '5000' },
+        ],
+      });
+      expect(response.status).toBe(201);
+      expect(response.body.warnings).toHaveLength(1);
+    });
+  });
+
   describe('limits and retries', () => {
     it('IP rate limit: states the limit and when to retry', async () => {
       const { app } = buildTestApp({ RATE_LIMIT_MAX: '1', RATE_LIMIT_WINDOW_MS: '60000' });

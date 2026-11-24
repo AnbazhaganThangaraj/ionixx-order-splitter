@@ -1,7 +1,9 @@
+import { getRequestId } from '../lib/request-context';
 import type { ErrorRequestHandler } from 'express';
+import { DomainError } from '../domain/errors';
 import { AppError, quote } from '../errors/app-error';
+import { toAppError } from '../errors/domain-error.mapper';
 import type { Logger } from '../lib/logger';
-import { getRequestId } from './request-id.middleware';
 
 /**
  * Errors created with the `http-errors` convention (used by express.json / body-parser):
@@ -76,6 +78,7 @@ const fromHttpClientError = (error: HttpClientError): AppError => {
  * { error: { code, message, details }, requestId }.
  *
  * - AppError                 -> its own status, code and message
+ * - DomainError              -> mapped by domain-error.mapper (e.g. 404, 422)
  * - http-errors client error -> mapped to a 4xx with a specific code (never a 500)
  * - anything else            -> logged with its stack; client gets a generic 500
  */
@@ -90,8 +93,12 @@ export const errorHandler =
     const requestId = getRequestId(res.locals);
     let appError: AppError;
 
+    const fromDomain = error instanceof DomainError ? toAppError(error) : undefined;
+
     if (error instanceof AppError) {
       appError = error;
+    } else if (fromDomain !== undefined) {
+      appError = fromDomain;
     } else if (isHttpClientError(error)) {
       appError = fromHttpClientError(error);
     } else {

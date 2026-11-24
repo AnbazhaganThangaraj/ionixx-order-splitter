@@ -1,46 +1,58 @@
+import type { CreateOrderCommand, ListOrdersQuery } from '../domain/order.commands';
+import { OrderNotExecutableError, OrderNotFoundError } from '../domain/errors';
 import type { Order } from '../domain/order.types';
-import { NotFoundError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
 import type { Clock } from '../lib/clock';
 import type { OrderPage, OrderRepository } from '../repositories/order.repository';
-import type { CreateOrderCommand, ListOrdersQuery } from '../validators/order.validator';
 import type { MarketScheduler } from './market-scheduler.service';
-import type { OrderCalculator } from './order-calculator.service';
+import type { PortfolioCalculator } from './order-calculator.service';
+
+/** The order use cases, as seen by the HTTP layer (and by test doubles). */
+export interface OrderUseCases {
+  createOrder(partnerId: string, command: CreateOrderCommand): Promise<Order>;
+  getOrder(partnerId: string, orderId: string): Promise<Order>;
+  listOrders(partnerId: string, query: ListOrdersQuery): Promise<OrderPage>;
+}
 
 export interface OrderServiceDependencies {
   readonly repository: OrderRepository;
-  readonly calculator: OrderCalculator;
+  readonly calculator: PortfolioCalculator;
   readonly scheduler: MarketScheduler;
   readonly clock: Clock;
   readonly generateId: () => string;
-  readonly quantityPrecision: number;
-  readonly moneyPrecision: number;
   readonly audit: AuditLog;
 }
 
 /**
- * Use cases for orders. Coordinates calculation, scheduling and storage; holds
- * no HTTP concerns and no maths of its own.
+ * Implements the order use cases by coordinating calculation, scheduling and storage.
+ * Depends only on ports (interfaces) and domain types: no HTTP, no validation library,
+ * no maths of its own. Business-rule failures are thrown as domain errors.
  */
-export class OrderService {
+export class OrderService implements OrderUseCases {
   constructor(private readonly deps: OrderServiceDependencies) {}
 
   async createOrder(partnerId: string, command: CreateOrderCommand): Promise<Order> {
-    const now = this.deps.clock.now();
-    const { lines, totals, warnings } = this.deps.calculator.calculate(command);
+    const calculation = this.deps.calculator.calculate(command);
 
+    // Business rule: an order must trade something. If every line rounds down to zero
+    // shares there is nothing to execute, so the order is rejected rather than scheduled.
+    if (calculation.untradableLines.length === calculation.lines.length) {
+      throw new OrderNotExecutableError(calculation.quantityPrecision, calculation.untradableLines);
+    }
+
+    const now = this.deps.clock.now();
     const order: Order = {
       orderId: this.deps.generateId(),
       partnerId,
       orderType: command.orderType,
       status: 'SCHEDULED',
       currency: command.currency,
-      totalAmount: command.totalAmount.toFixed(this.deps.moneyPrecision),
-      quantityPrecision: this.deps.quantityPrecision,
-      lines,
-      totals,
+      totalAmount: calculation.totalAmount,
+      quantityPrecision: calculation.quantityPrecision,
+      lines: calculation.lines,
+      totals: calculation.totals,
       execution: this.deps.scheduler.nextExecution(now),
-      warnings,
+      warnings: calculation.warnings,
       createdAt: now.toISOString(),
     };
 
@@ -61,7 +73,7 @@ export class OrderService {
     // Another partner's order is reported as "not found", not "forbidden",
     // so ids cannot be probed to learn that an order exists.
     if (order === undefined) {
-      throw new NotFoundError(`Order ${orderId} not found`);
+      throw new OrderNotFoundError(orderId);
     }
     return order;
   }

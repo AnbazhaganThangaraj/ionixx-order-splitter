@@ -117,8 +117,10 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           '413': errorResponse('Body larger than 100kb', 'PAYLOAD_TOO_LARGE'),
           '415': errorResponse('Content-Type is not application/json', 'UNSUPPORTED_MEDIA_TYPE'),
           '422': errorResponse(
-            'Idempotency-Key reused with a different body',
-            'IDEMPOTENCY_KEY_REUSED',
+            'The order would not trade anything (ORDER_NOT_EXECUTABLE: every line rounds ' +
+              'down to zero shares), or the Idempotency-Key was reused with a different body ' +
+              '(IDEMPOTENCY_KEY_REUSED)',
+            'ORDER_NOT_EXECUTABLE',
           ),
           '429': errorResponse('Rate limit exceeded; see Retry-After', 'RATE_LIMITED'),
           '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),

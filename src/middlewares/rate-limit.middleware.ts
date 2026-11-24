@@ -1,9 +1,8 @@
+import { getPartnerId, getRequestId } from '../lib/request-context';
 import type { RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { AppError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
-import { getPartnerId } from './api-key-auth.middleware';
-import { getRequestId } from './request-id.middleware';
 
 /** express-rate-limit attaches its counters to the request as `req.rateLimit`. */
 const retryAfterSeconds = (req: unknown, windowMs: number): number => {

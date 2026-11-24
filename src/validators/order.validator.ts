@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CreateOrderCommand, ListOrdersQuery } from '../domain/order.commands';
 import { ORDER_TYPES, SUPPORTED_CURRENCIES } from '../domain/order.enums';
 import { quote } from '../errors/app-error';
 import { Decimal } from '../lib/decimal';
@@ -123,7 +124,10 @@ export const createOrderSchema = z
     }
   });
 
-export type CreateOrderCommand = z.output<typeof createOrderSchema>;
+// Compile-time check: the validator produces exactly the domain command type.
+export const toCreateOrderCommand = (
+  parsed: z.output<typeof createOrderSchema>,
+): CreateOrderCommand => parsed;
 
 const pageSizeMessage = `must be an integer from 1 to ${ORDER_LIMITS.maxPageSize}`;
 const offsetMessage = 'must be an integer of 0 or more';
@@ -148,7 +152,9 @@ export const listOrdersQuerySchema = z.strictObject(
   { error: strictObjectError(QUERY_FIELDS, 'query parameters') },
 );
 
-export type ListOrdersQuery = z.output<typeof listOrdersQuerySchema>;
+export const toListOrdersQuery = (
+  parsed: z.output<typeof listOrdersQuerySchema>,
+): ListOrdersQuery => parsed;
 
 export const orderIdParamSchema = z.object({
   orderId: z.uuid({

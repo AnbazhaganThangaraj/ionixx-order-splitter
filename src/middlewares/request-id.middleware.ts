@@ -17,6 +17,3 @@ export const requestId = (): RequestHandler => (req, res, next) => {
   res.setHeader(REQUEST_ID_HEADER, id);
   next();
 };
-
-export const getRequestId = (locals: Record<string, unknown>): string =>
-  typeof locals.requestId === 'string' ? locals.requestId : 'unknown';

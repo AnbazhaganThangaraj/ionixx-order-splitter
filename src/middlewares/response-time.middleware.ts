@@ -1,7 +1,7 @@
+import { findPartnerId, getRequestId } from '../lib/request-context';
 import { performance } from 'node:perf_hooks';
 import type { Request, RequestHandler } from 'express';
 import type { Logger } from '../lib/logger';
-import { getRequestId } from './request-id.middleware';
 
 /**
  * Express resets req.baseUrl when a request leaves a router (e.g. an error is
@@ -47,7 +47,7 @@ export const responseTimeLogger =
         statusCode: res.statusCode,
         durationMs,
         clientIp: req.ip,
-        partnerId: typeof res.locals.partnerId === 'string' ? res.locals.partnerId : undefined,
+        partnerId: findPartnerId(res.locals),
       };
       const message = `${req.method} ${entry.route} ${res.statusCode} ${durationMs}ms`;
 

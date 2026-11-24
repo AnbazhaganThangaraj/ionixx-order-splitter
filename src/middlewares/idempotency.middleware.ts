@@ -1,10 +1,9 @@
+import { getPartnerId, getRequestId } from '../lib/request-context';
 import { createHash } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { AppError, ValidationError } from '../errors/app-error';
 import type { AuditLog } from '../lib/audit';
 import type { IdempotencyStore } from '../repositories/idempotency.store';
-import { getRequestId } from './request-id.middleware';
-import { getPartnerId } from './api-key-auth.middleware';
 
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
 const SAFE_KEY = /^[A-Za-z0-9._:-]{1,255}$/;

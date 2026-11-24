@@ -58,8 +58,6 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     scheduler: deps.scheduler ?? new WeekdayMarketScheduler(config.market),
     clock,
     generateId: deps.generateId ?? randomUUID,
-    quantityPrecision: config.order.quantityPrecision,
-    moneyPrecision: config.order.moneyPrecision,
     audit,
   });
 
