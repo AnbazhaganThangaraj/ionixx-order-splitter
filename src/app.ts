@@ -75,7 +75,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
   // AFTER rate limiting and authentication (see order.routes.ts), so anonymous or
   // throttled clients cannot make the server buffer and parse bodies.
 
-  app.use('/health', recordMountPath(), createHealthRouter(lifecycle));
+  app.use('/health', recordMountPath(), createHealthRouter(lifecycle, clock));
   app.use('/docs', recordMountPath(), docsSecurityHeaders(), createDocsRouter(config));
   app.use(
     '/api/v1/orders',

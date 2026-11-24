@@ -130,21 +130,26 @@ export const toCreateOrderCommand = (
 ): CreateOrderCommand => parsed;
 
 const pageSizeMessage = `must be an integer from 1 to ${ORDER_LIMITS.maxPageSize}`;
+
+/** Query-string integer: digits only (no "1e1", "0x10" or "2.5"), within [min, max]. */
+const queryInteger = (
+  min: number,
+  max: number,
+  message: string,
+): z.ZodPipe<z.ZodPipe<z.ZodString, z.ZodTransform<number, string>>, z.ZodNumber> =>
+  z
+    .string({ error: message })
+    .regex(/^\d+$/, message)
+    .transform(Number)
+    .pipe(z.number().min(min, message).max(max, message));
 const offsetMessage = 'must be an integer of 0 or more';
 
 export const listOrdersQuerySchema = z.strictObject(
   {
-    limit: z.coerce
-      .number({ error: pageSizeMessage })
-      .int(pageSizeMessage)
-      .min(1, pageSizeMessage)
-      .max(ORDER_LIMITS.maxPageSize, pageSizeMessage)
-      .default(ORDER_LIMITS.defaultPageSize),
-    offset: z.coerce
-      .number({ error: offsetMessage })
-      .int(offsetMessage)
-      .min(0, offsetMessage)
-      .default(0),
+    limit: queryInteger(1, ORDER_LIMITS.maxPageSize, pageSizeMessage).default(
+      ORDER_LIMITS.defaultPageSize,
+    ),
+    offset: queryInteger(0, Number.MAX_SAFE_INTEGER, offsetMessage).default(0),
     orderType: z
       .enum(ORDER_TYPES, { error: requiredOr(`one of ${ORDER_TYPES.join(', ')}`) })
       .optional(),

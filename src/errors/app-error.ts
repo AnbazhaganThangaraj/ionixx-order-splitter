@@ -44,3 +44,7 @@ export class NotFoundError extends AppError {
 /** Shortens client-supplied text before echoing it back in an error message. */
 export const quote = (value: string, max = 40): string =>
   JSON.stringify(value.length > max ? `${value.slice(0, max)}…` : value);
+
+/** Shortens client-supplied text (without quoting) before echoing it back. */
+export const truncate = (value: string, max = 100): string =>
+  value.length > max ? `${value.slice(0, max)}…` : value;

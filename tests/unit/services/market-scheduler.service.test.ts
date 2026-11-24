@@ -127,9 +127,9 @@ describe('WeekdayMarketScheduler (America/New_York, 09:30-16:00)', () => {
     });
   });
 
-  it('rejects a malformed market time', () => {
+  it.each(['nine', '25:00', '09:60', '9:30'])('rejects a malformed market time %p', (openTime) => {
     expect(
-      () => new WeekdayMarketScheduler({ timeZone: 'UTC', openTime: 'nine', closeTime: '16:00' }),
+      () => new WeekdayMarketScheduler({ timeZone: 'UTC', openTime, closeTime: '16:00' }),
     ).toThrow(/Invalid market time/);
   });
 });

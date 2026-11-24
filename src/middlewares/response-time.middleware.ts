@@ -1,6 +1,7 @@
 import { findPartnerId, getRequestId } from '../lib/request-context';
 import { performance } from 'node:perf_hooks';
 import type { Request, RequestHandler } from 'express';
+import { truncate } from '../errors/app-error';
 import type { Logger } from '../lib/logger';
 
 /**
@@ -25,7 +26,8 @@ const routeOf = (req: Request, locals: Record<string, unknown>): string => {
     const routePath = route.path === '/' ? '' : route.path;
     return `${mountPath}${routePath}` || '/';
   }
-  return req.path;
+  // Unmatched routes: log a bounded path so log labels cannot grow without limit.
+  return truncate(req.path, 100);
 };
 
 /**
@@ -38,23 +40,32 @@ export const responseTimeLogger =
   (req, res, next) => {
     const start = performance.now();
 
-    res.on('finish', () => {
+    let logged = false;
+    const log = (): void => {
+      if (logged) return;
+      logged = true;
       const durationMs = Math.round((performance.now() - start) * 100) / 100;
+      // A connection closed before the response finished is logged as 499 (client closed).
+      const aborted = !res.writableFinished;
+      const statusCode = aborted ? 499 : res.statusCode;
       const entry = {
         requestId: getRequestId(res.locals),
         method: req.method,
         route: routeOf(req, res.locals),
-        statusCode: res.statusCode,
+        statusCode,
         durationMs,
         clientIp: req.ip,
         partnerId: findPartnerId(res.locals),
+        ...(aborted ? { aborted: true } : {}),
       };
-      const message = `${req.method} ${entry.route} ${res.statusCode} ${durationMs}ms`;
+      const message = `${req.method} ${entry.route} ${statusCode} ${durationMs}ms${aborted ? ' (client closed)' : ''}`;
 
-      if (res.statusCode >= 500) logger.error(entry, message);
-      else if (res.statusCode >= 400) logger.warn(entry, message);
+      if (statusCode >= 500) logger.error(entry, message);
+      else if (statusCode >= 400) logger.warn(entry, message);
       else logger.info(entry, message);
-    });
+    };
+    res.on('finish', log);
+    res.on('close', log);
 
     next();
   };

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Clock } from '../lib/clock';
 import type { AppLifecycle } from '../lib/lifecycle';
 import { methodNotAllowed } from '../middlewares/method-not-allowed.middleware';
 
@@ -7,13 +8,13 @@ import { methodNotAllowed } from '../middlewares/method-not-allowed.middleware';
  * - GET /health/ready readiness: OK to receive traffic (503 while shutting down)
  * - GET /health       alias of liveness, kept for simple checks
  */
-export const createHealthRouter = (lifecycle: AppLifecycle): Router => {
+export const createHealthRouter = (lifecycle: AppLifecycle, clock: Clock): Router => {
   const router = Router();
 
   const live = (): Record<string, unknown> => ({
     status: 'ok',
     uptimeSeconds: Math.round(process.uptime()),
-    timestamp: new Date().toISOString(),
+    timestamp: clock.now().toISOString(),
   });
 
   router.get('/', (_req, res) => {
@@ -24,10 +25,10 @@ export const createHealthRouter = (lifecycle: AppLifecycle): Router => {
   });
   router.get('/ready', (_req, res) => {
     if (lifecycle.isDraining) {
-      res.status(503).json({ status: 'draining', timestamp: new Date().toISOString() });
+      res.status(503).json({ status: 'draining', timestamp: clock.now().toISOString() });
       return;
     }
-    res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+    res.status(200).json({ status: 'ready', timestamp: clock.now().toISOString() });
   });
 
   router.all(['/', '/live', '/ready'], methodNotAllowed(['GET']));

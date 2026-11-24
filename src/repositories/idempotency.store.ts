@@ -81,7 +81,6 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
    * Every record has the same TTL and the Map keeps insertion order, so records are
    * also in expiry order: stop at the first one that has not expired. Cost is
    * proportional to the number of expired records, not to the size of the store.
-   * (The first version scanned every record on every request.)
    */
   private removeExpired(): void {
     const now = this.now();

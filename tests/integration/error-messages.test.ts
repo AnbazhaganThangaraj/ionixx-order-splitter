@@ -371,3 +371,21 @@ describe('Error messages by use case', () => {
     });
   });
 });
+
+describe('Low-level hardening', () => {
+  it.each(['0x10', '1e1', '2.5', '-1', ' 5'])(
+    'rejects non-decimal query integers (limit=%p)',
+    async (limit) => {
+      const { app } = buildTestApp();
+      const response = await request(app).get('/api/v1/orders').query({ limit });
+      expect(response.status).toBe(400);
+    },
+  );
+
+  it('truncates very long unknown paths in the 404 message', async () => {
+    const { app } = buildTestApp();
+    const response = await request(app).get(`/${'a'.repeat(3000)}`);
+    expect(response.status).toBe(404);
+    expect((response.body.error.message as string).length).toBeLessThan(200);
+  });
+});

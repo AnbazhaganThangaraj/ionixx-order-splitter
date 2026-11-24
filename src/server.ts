@@ -61,20 +61,23 @@ const start = (): void => {
       );
       process.exit(1);
     }
+    const address = server.address();
+    const port = typeof address === 'object' && address !== null ? address.port : config.port;
     logger.info(
       {
-        port: config.port,
+        port,
         quantityPrecision: config.order.quantityPrecision,
         defaultStockPrice: config.order.defaultStockPrice,
         authenticatedPartners: [...new Set(config.auth.apiKeys.map((k) => k.partnerId))],
         market: config.market,
       },
-      `Order splitter API listening on http://localhost:${config.port}`,
+      `Order splitter API listening on http://localhost:${String(port)}`,
     );
   });
 
-  // Slow-client protection (slowloris): cap how long headers and whole requests may take.
-  server.headersTimeout = 66_000;
+  // Slow-client protection (slowloris): headers must arrive within 20 s and the whole
+  // request within 30 s (headersTimeout must not exceed requestTimeout to have any effect).
+  server.headersTimeout = 20_000;
   server.requestTimeout = 30_000;
   // Keep idle connections open longer than a typical load balancer's idle timeout (60s),
   // otherwise the LB may reuse a socket Node has just closed and return a 502.

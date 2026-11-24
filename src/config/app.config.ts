@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { hashApiKey } from '../lib/crypto';
+import { minutesSinceMidnight, parseTimeOfDay } from '../lib/time-of-day';
 
-const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 const POSITIVE_DECIMAL = /^(?!0+(\.0+)?$)\d+(\.\d+)?$/;
 
 const isValidTimeZone = (zone: string): boolean => {
@@ -66,9 +66,31 @@ const parseKeyList =
     return entries;
   };
 
-const toMinutes = (time: string): number => {
-  const [hours, minutes] = time.split(':').map(Number);
-  return (hours ?? 0) * 60 + (minutes ?? 0);
+/** Whole numbers only: rejects "1e3", "0x10", "2.5" and other forms Number() would accept. */
+type IntegerSchema = z.ZodPipe<z.ZodPipe<z.ZodString, z.ZodTransform<number, string>>, z.ZodNumber>;
+
+const integerSetting = (min: number, max: number, fallback: number): z.ZodDefault<IntegerSchema> =>
+  z
+    .string()
+    .regex(/^\d+$/, `must be a whole number from ${min} to ${max}`)
+    .transform(Number)
+    .pipe(
+      z
+        .number()
+        .min(min, `must be a whole number from ${min} to ${max}`)
+        .max(max, `must be a whole number from ${min} to ${max}`),
+    )
+    .default(fallback);
+
+const timeOfDaySetting = (fallback: string): z.ZodDefault<z.ZodString> =>
+  z
+    .string()
+    .refine((value) => parseTimeOfDay(value) !== undefined, 'must be HH:mm (24h)')
+    .default(fallback);
+
+const minutesOf = (time: string): number => {
+  const parsed = parseTimeOfDay(time);
+  return parsed === undefined ? Number.NaN : minutesSinceMidnight(parsed);
 };
 
 /**
@@ -78,7 +100,8 @@ const toMinutes = (time: string): number => {
  */
 const envSchema = z
   .object({
-    PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+    // 0 = any free port (used by tests); the real port is logged at startup.
+    PORT: integerSetting(0, 65535, 3000),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -87,26 +110,26 @@ const envSchema = z
       .string()
       .regex(POSITIVE_DECIMAL, 'must be a positive decimal number, e.g. "100" or "100.00"')
       .default('100'),
-    QUANTITY_PRECISION: z.coerce.number().int().min(0).max(10).default(3),
+    QUANTITY_PRECISION: integerSetting(0, 10, 3),
     MARKET_TIMEZONE: z
       .string()
       .refine(isValidTimeZone, 'must be a valid IANA time zone, e.g. "America/New_York"')
       .default('America/New_York'),
-    MARKET_OPEN_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('09:30'),
-    MARKET_CLOSE_TIME: z.string().regex(TIME_OF_DAY, 'must be HH:mm (24h)').default('16:00'),
-    TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
+    MARKET_OPEN_TIME: timeOfDaySetting('09:30'),
+    MARKET_CLOSE_TIME: timeOfDaySetting('16:00'),
+    TRUST_PROXY: integerSetting(0, 10, 0),
     API_KEYS: z.string().transform(parseKeyList('plaintext')).default([]),
     API_KEY_HASHES: z.string().transform(parseKeyList('hash')).default([]),
     AUTH_DISABLED: z
       .enum(['true', 'false'], { error: 'must be "true" or "false"' })
       .default('false')
       .transform((value) => value === 'true'),
-    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
-    RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
-    PARTNER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000_000).default(600),
-    IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
+    RATE_LIMIT_WINDOW_MS: integerSetting(1000, 3_600_000, 60_000),
+    RATE_LIMIT_MAX: integerSetting(1, 100_000, 100),
+    PARTNER_RATE_LIMIT_MAX: integerSetting(1, 1_000_000, 600),
+    IDEMPOTENCY_TTL_SECONDS: integerSetting(60, 604_800, 86_400),
   })
-  .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
+  .refine((env) => minutesOf(env.MARKET_OPEN_TIME) < minutesOf(env.MARKET_CLOSE_TIME), {
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
     path: ['MARKET_OPEN_TIME'],
   })

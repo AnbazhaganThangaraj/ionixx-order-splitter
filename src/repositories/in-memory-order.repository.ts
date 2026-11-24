@@ -8,9 +8,7 @@ import type { ListOrdersFilter, OrderPage, OrderRepository } from './order.repos
  *
  * Orders are kept by id, plus an append-only list of ids per partner and per
  * (partner, order type). Lists are in creation order, so "newest first" paging is a
- * slice from the end: O(limit), independent of how many orders exist. (The first
- * version copied and reversed every order on each list call; the load test showed
- * that collapsing to ~120 req/s at 140k orders. See docs/PERFORMANCE.md.)
+ * slice from the end: O(limit), independent of how many orders exist (measured in docs/PERFORMANCE.md).
  *
  * Orders are cloned on the way in and out so callers can never mutate stored data.
  */

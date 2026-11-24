@@ -52,7 +52,12 @@ const waitFor = async (check: () => boolean, timeoutMs = 15_000): Promise<void> 
   }
 };
 
-const randomPort = (): string => String(40_000 + Math.floor(Math.random() * 10_000));
+/** Reads the port the server actually bound (PORT=0 lets the OS pick a free one). */
+const boundPort = (output: string): string => {
+  const match = /listening on http:\/\/localhost:(\d+)/.exec(output);
+  if (match?.[1] === undefined) throw new Error('server did not report its port');
+  return match[1];
+};
 
 afterEach(() => {
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL');
@@ -60,9 +65,9 @@ afterEach(() => {
 
 describe('server process', () => {
   it('starts, serves requests and shuts down gracefully on SIGTERM with exit code 0', async () => {
-    const port = randomPort();
-    const server = startServer({ PORT: port });
+    const server = startServer({ PORT: '0' });
     await waitFor(() => server.output().includes('listening on'));
+    const port = boundPort(server.output());
 
     const response = await fetch(`http://127.0.0.1:${port}/health/ready`);
     expect(response.status).toBe(200);
@@ -74,9 +79,9 @@ describe('server process', () => {
   });
 
   it('exits with code 1 and a clear fatal log when the port is already in use', async () => {
-    const port = randomPort();
-    const first = startServer({ PORT: port });
+    const first = startServer({ PORT: '0' });
     await waitFor(() => first.output().includes('listening on'));
+    const port = boundPort(first.output());
 
     const second = startServer({ PORT: port });
     expect(await second.exited).toBe(1);
@@ -85,20 +90,20 @@ describe('server process', () => {
   });
 
   it('exits with code 1 and lists the problems when configuration is invalid', async () => {
-    const server = startServer({ PORT: randomPort(), QUANTITY_PRECISION: '-1' });
+    const server = startServer({ PORT: '0', QUANTITY_PRECISION: '-1' });
     expect(await server.exited).toBe(1);
     expect(server.output()).toContain('Invalid configuration');
     expect(server.output()).toContain('QUANTITY_PRECISION');
   });
 
   it('refuses to start when authentication is neither configured nor explicitly disabled', async () => {
-    const server = startServer({ PORT: randomPort(), AUTH_DISABLED: '' });
+    const server = startServer({ PORT: '0', AUTH_DISABLED: '' });
     expect(await server.exited).toBe(1);
     expect(server.output()).toContain('no API keys configured');
   });
 
   it('refuses to start in production without API keys', async () => {
-    const server = startServer({ PORT: randomPort(), NODE_ENV: 'production', AUTH_DISABLED: '' });
+    const server = startServer({ PORT: '0', NODE_ENV: 'production', AUTH_DISABLED: '' });
     expect(await server.exited).toBe(1);
     expect(server.output()).toContain('is required when NODE_ENV=production');
   });

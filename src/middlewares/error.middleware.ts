@@ -86,6 +86,11 @@ export const errorHandler =
   (logger: Logger): ErrorRequestHandler =>
   (error: unknown, _req, res, next) => {
     if (res.headersSent) {
+      // Too late to send an error body: log it, then let Express close the connection.
+      logger.error(
+        { err: error, requestId: getRequestId(res.locals) },
+        'Error after response started',
+      );
       next(error);
       return;
     }

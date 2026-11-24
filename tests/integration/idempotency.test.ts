@@ -59,6 +59,10 @@ describe('Idempotency-Key', () => {
 
   it('returns 409 while the first request with the key is still running', async () => {
     let releaseSave: () => void = () => undefined;
+    let signalSaveStarted: () => void = () => undefined;
+    const saveStarted = new Promise<void>((resolve) => {
+      signalSaveStarted = resolve;
+    });
     const repository = new InMemoryOrderRepository();
     const slowRepository = {
       findById: repository.findById.bind(repository),
@@ -68,6 +72,7 @@ describe('Idempotency-Key', () => {
           releaseSave = () => {
             void repository.save(order).then(resolve);
           };
+          signalSaveStarted();
         }),
     };
     const { app } = buildTestApp({}, { repository: slowRepository });
@@ -77,7 +82,8 @@ describe('Idempotency-Key', () => {
       .set('Idempotency-Key', 'slow')
       .send(briefExampleRequest)
       .then((r) => r);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Wait until the first request is provably in flight (inside save), not a fixed delay.
+    await saveStarted;
 
     const concurrent = await request(app)
       .post(ORDERS)

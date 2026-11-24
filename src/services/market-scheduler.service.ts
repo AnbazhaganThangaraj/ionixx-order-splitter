@@ -1,6 +1,17 @@
 import { DateTime } from 'luxon';
 import type { ExecutionReason } from '../domain/order.enums';
 import type { OrderExecution } from '../domain/order.types';
+import { parseTimeOfDay, type TimeOfDay } from '../lib/time-of-day';
+
+const MarketSchedulerTime = {
+  /** Luxon returns null only for invalid DateTimes, which cannot occur here: fail loudly if it does. */
+  toIso: (value: DateTime): string => {
+    const iso = value.toISO();
+    if (iso === null)
+      throw new Error(`Invalid execution time: ${value.invalidReason ?? 'unknown'}`);
+    return iso;
+  },
+};
 
 export interface MarketHours {
   /** IANA time zone of the exchange, e.g. "America/New_York". */
@@ -73,7 +84,7 @@ export class WeekdayMarketScheduler implements MarketScheduler {
 
   private plan(executeAt: DateTime, reason: ExecutionReason): OrderExecution {
     return {
-      executeAt: executeAt.toISO() ?? executeAt.toUTC().toString(),
+      executeAt: MarketSchedulerTime.toIso(executeAt),
       timeZone: this.hours.timeZone,
       reason,
     };
@@ -83,11 +94,11 @@ export class WeekdayMarketScheduler implements MarketScheduler {
     return date.weekday < SATURDAY;
   }
 
-  private static parseTime(time: string): { hour: number; minute: number } {
-    const [hour, minute] = time.split(':').map(Number);
-    if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) {
-      throw new Error(`Invalid market time "${time}", expected HH:mm`);
+  private static parseTime(time: string): TimeOfDay {
+    const parsed = parseTimeOfDay(time);
+    if (parsed === undefined) {
+      throw new Error(`Invalid market time "${time}", expected HH:mm (00:00-23:59)`);
     }
-    return { hour, minute };
+    return parsed;
   }
 }
