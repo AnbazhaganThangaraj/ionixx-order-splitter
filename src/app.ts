@@ -3,8 +3,10 @@ import express, { type Express } from 'express';
 import type { AppConfig } from './config/app.config';
 import { OrderController } from './controllers/order.controller';
 import { type Clock, systemClock } from './lib/clock';
+import { AppLifecycle } from './lib/lifecycle';
 import { createLogger, type Logger } from './lib/logger';
 import { apiKeyAuth } from './middlewares/api-key-auth.middleware';
+import { connectionDrain } from './middlewares/connection-drain.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFound } from './middlewares/not-found.middleware';
 import { apiRateLimit } from './middlewares/rate-limit.middleware';
@@ -28,6 +30,7 @@ import { OrderService } from './services/order.service';
 /** Replaceable collaborators, mainly so tests can fix the clock or inject failures. */
 export interface AppDependencies {
   readonly logger?: Logger;
+  readonly lifecycle?: AppLifecycle;
   readonly clock?: Clock;
   readonly repository?: OrderRepository;
   readonly idempotencyStore?: IdempotencyStore;
@@ -42,6 +45,7 @@ export interface AppDependencies {
 export const createApp = (config: AppConfig, deps: AppDependencies = {}): Express => {
   const logger = deps.logger ?? createLogger(config.logLevel);
   const clock = deps.clock ?? systemClock;
+  const lifecycle = deps.lifecycle ?? new AppLifecycle();
   const idempotencyStore =
     deps.idempotencyStore ??
     new InMemoryIdempotencyStore(clock, config.idempotency.ttlSeconds * 1000);
@@ -63,11 +67,12 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
   app.set('trust proxy', config.http.trustProxyHops === 0 ? false : config.http.trustProxyHops);
 
   app.use(apiSecurityHeaders());
+  app.use(connectionDrain(lifecycle));
   app.use(requestId());
   app.use(responseTimeLogger(logger));
   app.use(express.json({ limit: '100kb' }));
 
-  app.use('/health', recordMountPath(), createHealthRouter());
+  app.use('/health', recordMountPath(), createHealthRouter(lifecycle));
   app.use('/docs', recordMountPath(), docsSecurityHeaders(), createDocsRouter(config));
   app.use(
     '/api/v1/orders',

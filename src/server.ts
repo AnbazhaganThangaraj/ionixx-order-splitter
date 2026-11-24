@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import { createApp } from './app';
 import { ConfigError, loadConfig } from './config/app.config';
+import { AppLifecycle } from './lib/lifecycle';
 import { createLogger } from './lib/logger';
+
+const SHUTDOWN_GRACE_MS = 10_000;
 
 const start = (): void => {
   let config;
@@ -24,7 +27,8 @@ const start = (): void => {
     );
   }
 
-  const app = createApp(config, { logger });
+  const lifecycle = new AppLifecycle();
+  const app = createApp(config, { logger, lifecycle });
 
   const server = app.listen(config.port, () => {
     logger.info(
@@ -46,11 +50,24 @@ const start = (): void => {
   // otherwise the LB may reuse a socket Node has just closed and return a 502.
   server.keepAliveTimeout = 65_000;
 
+  /**
+   * Graceful shutdown: fail readiness so no new traffic arrives, stop accepting
+   * connections, let in-flight requests finish, then exit. Force-exit after a grace period.
+   */
   const shutdown = (signal: string): void => {
-    logger.info({ signal }, 'Shutting down');
-    server.close(() => process.exit(0));
-    // Do not hang forever on keep-alive connections.
-    setTimeout(() => process.exit(1), 10_000).unref();
+    if (lifecycle.isDraining) return;
+    lifecycle.startDraining();
+    logger.info({ signal }, 'Shutting down: draining connections');
+
+    server.close((error) => {
+      logger.info('HTTP server closed');
+      process.exit(error ? 1 : 0);
+    });
+    server.closeIdleConnections();
+    setTimeout(() => {
+      logger.warn('Grace period elapsed; forcing exit');
+      process.exit(1);
+    }, SHUTDOWN_GRACE_MS).unref();
   };
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');

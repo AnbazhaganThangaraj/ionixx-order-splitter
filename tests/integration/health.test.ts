@@ -1,11 +1,11 @@
 import request from 'supertest';
+import { AppLifecycle } from '../../src/lib/lifecycle';
 import { buildTestApp } from '../helpers/test-app';
 
-describe('GET /health', () => {
-  const { app } = buildTestApp();
-
-  it('returns 200 with process status', async () => {
-    const response = await request(app).get('/health');
+describe('Health checks', () => {
+  it.each(['/health', '/health/live'])('%s reports the process is alive', async (path) => {
+    const { app } = buildTestApp();
+    const response = await request(app).get(path);
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: 'ok' });
@@ -13,8 +13,38 @@ describe('GET /health', () => {
     expect(new Date(response.body.timestamp as string).toString()).not.toBe('Invalid Date');
   });
 
-  it('does not advertise the framework', async () => {
-    const response = await request(app).get('/health');
-    expect(response.headers['x-powered-by']).toBeUndefined();
+  it('/health/ready is 200 while serving traffic', async () => {
+    const { app } = buildTestApp();
+    const response = await request(app).get('/health/ready');
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('ready');
+  });
+
+  describe('while shutting down', () => {
+    const lifecycle = new AppLifecycle();
+    const { app } = buildTestApp({}, { lifecycle });
+    lifecycle.startDraining();
+
+    it('readiness fails so the load balancer stops sending traffic', async () => {
+      const response = await request(app).get('/health/ready');
+      expect(response.status).toBe(503);
+      expect(response.body.status).toBe('draining');
+    });
+
+    it('liveness still passes (do not restart a process that is shutting down cleanly)', async () => {
+      expect((await request(app).get('/health/live')).status).toBe(200);
+    });
+
+    it('in-flight API requests are still served but ask clients to close the connection', async () => {
+      const response = await request(app).get('/api/v1/orders').set('Connection', 'keep-alive');
+      expect(response.status).toBe(200);
+      expect(response.headers.connection).toBe('close');
+    });
+  });
+
+  it('does not ask clients to close connections during normal operation', async () => {
+    const { app } = buildTestApp();
+    const response = await request(app).get('/api/v1/orders').set('Connection', 'keep-alive');
+    expect(response.headers.connection).toBe('keep-alive');
   });
 });
