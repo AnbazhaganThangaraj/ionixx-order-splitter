@@ -116,7 +116,8 @@ data: `perf/results/before-optimisation.json` and `perf/results/concurrent-50.js
   configurable cap on stored orders would be the stopgap.
 - **One Node.js process uses one CPU core** for request handling. Throughput scales by
   running several processes (one per core, or several container replicas), which requires
-  the shared order store, rate limits and idempotency records described in ANSWERS.md.
+  the shared order store, rate limits and idempotency records described in
+  [PRODUCTION.md](PRODUCTION.md).
 
 ## Limits of these numbers
 

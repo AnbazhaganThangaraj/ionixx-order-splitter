@@ -33,7 +33,7 @@ Trust boundaries: internet → load balancer (TLS termination) → application �
 
 | Threat                     | Example                                                                    | Controls in place                                                                                                                                                                                                                                                                                                  | Remaining risk / production step                                                                                                                                  |
 | -------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Spoofing**               | Guessing or stealing an API key                                            | 256-bit random keys (`npm run hash-key`); only SHA-256 hashes stored (`API_KEY_HASHES`); constant-time comparison; per-IP rate limit runs **before** authentication; `auth.failed` audit events                                                                                                                    | Static bearer keys can be replayed if leaked → mTLS or OAuth2 client credentials, or HMAC-signed requests with timestamp and nonce; secrets manager with rotation |
+| **Spoofing**               | Guessing or stealing an API key                                            | keys generated as 256-bit random values by `npm run hash-key` (config enforces ≥ 24 characters for plaintext keys); only SHA-256 hashes stored (`API_KEY_HASHES`); constant-time comparison; per-IP rate limit runs **before** authentication; `auth.failed` audit events                                          | Static bearer keys can be replayed if leaked → mTLS or OAuth2 client credentials, or HMAC-signed requests with timestamp and nonce; secrets manager with rotation |
 | **Tampering**              | Malformed or crafted payloads; modified traffic                            | Strict Zod validation, unknown fields rejected (no silent defaults); `__proto__`/`constructor` payloads rejected (tested); exact decimal arithmetic; HSTS; idempotency keys bound to a hash of the body                                                                                                            | TLS is terminated at the load balancer, not in the app; no request signing                                                                                        |
 | **Repudiation**            | A partner disputes having created an order                                 | `order.created` audit event with partner id and order id; request ids on every response and log line                                                                                                                                                                                                               | Logs go to stdout → ship to an append-only, retained log store                                                                                                    |
 | **Information disclosure** | Reading another partner's orders; leaks via errors, logs or caches         | Partner id taken **only** from the API key, never from the request; another partner's order returns 404 (no id probing); generic 500s; request bodies and keys never logged, plus logger redaction; `Cache-Control: no-store`; `default-src 'none'` CSP                                                            | Data is held in memory (lost on restart by design) → encryption at rest once a database is added                                                                  |
@@ -61,10 +61,17 @@ Trust boundaries: internet → load balancer (TLS termination) → application �
 4. **Rotate** by adding the new hash alongside the old one, letting the partner switch,
    then removing the old hash. Several keys per partner are supported for this reason.
 
-SHA-256 (not bcrypt) is appropriate here because keys are 256-bit random values, not
+SHA-256 (not bcrypt) is appropriate here because keys generated this way are 256-bit
+random values, not
 human-chosen passwords, so they cannot be brute-forced from their hashes.
-`API_KEYS` (plaintext) is accepted for local development only; the app logs a warning
-if it is used in production, and refuses to start in production without any keys.
+Configuration cannot enforce the entropy of a key supplied as a hash, so always generate
+keys with the script rather than choosing them by hand. `API_KEYS` (plaintext) is accepted
+for local development only; the app logs a warning if it is used in production.
+
+Authentication **fails closed**: the app refuses to start unless keys are configured or
+`AUTH_DISABLED=true` is set explicitly, which is itself refused in production. Request
+bodies are parsed only after rate limiting and authentication, so unauthenticated or
+throttled clients cannot make the server parse a body.
 
 ## Audit events
 
