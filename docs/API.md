@@ -125,7 +125,7 @@ Sending an `Idempotency-Key` header makes the retry safe:
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/orders \
   -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: 7d1f3c2a-order-0001' \
+  -H 'Idempotency-Key: order-1001' \
   -d '{ "orderType": "BUY", "totalAmount": "100", "portfolio": [{ "symbol": "AAPL", "allocation": "100" }] }'
 ```
 
