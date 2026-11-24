@@ -15,6 +15,7 @@ import {
   noStore,
 } from './middlewares/security.middleware';
 import { recordMountPath, responseTimeLogger } from './middlewares/response-time.middleware';
+import { type IdempotencyStore, InMemoryIdempotencyStore } from './repositories/idempotency.store';
 import { InMemoryOrderRepository } from './repositories/in-memory-order.repository';
 import type { OrderRepository } from './repositories/order.repository';
 import { createDocsRouter } from './routes/docs.routes';
@@ -29,6 +30,7 @@ export interface AppDependencies {
   readonly logger?: Logger;
   readonly clock?: Clock;
   readonly repository?: OrderRepository;
+  readonly idempotencyStore?: IdempotencyStore;
   readonly scheduler?: MarketScheduler;
   readonly generateId?: () => string;
 }
@@ -39,12 +41,16 @@ export interface AppDependencies {
  */
 export const createApp = (config: AppConfig, deps: AppDependencies = {}): Express => {
   const logger = deps.logger ?? createLogger(config.logLevel);
+  const clock = deps.clock ?? systemClock;
+  const idempotencyStore =
+    deps.idempotencyStore ??
+    new InMemoryIdempotencyStore(clock, config.idempotency.ttlSeconds * 1000);
 
   const orderService = new OrderService({
     repository: deps.repository ?? new InMemoryOrderRepository(),
     calculator: new OrderCalculator(config.order),
     scheduler: deps.scheduler ?? new WeekdayMarketScheduler(config.market),
-    clock: deps.clock ?? systemClock,
+    clock,
     generateId: deps.generateId ?? randomUUID,
     quantityPrecision: config.order.quantityPrecision,
     moneyPrecision: config.order.moneyPrecision,
@@ -69,7 +75,7 @@ export const createApp = (config: AppConfig, deps: AppDependencies = {}): Expres
     noStore(),
     apiRateLimit(config.http.rateLimit),
     apiKeyAuth(config.auth.apiKeys),
-    createOrderRouter(new OrderController(orderService)),
+    createOrderRouter(new OrderController(orderService), idempotencyStore),
   );
 
   app.use(notFound());

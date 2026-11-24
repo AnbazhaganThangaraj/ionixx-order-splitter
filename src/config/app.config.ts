@@ -88,6 +88,7 @@ const envSchema = z
     API_KEYS: z.string().transform(parseApiKeys).default([]),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(100),
+    IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
   })
   .refine((env) => toMinutes(env.MARKET_OPEN_TIME) < toMinutes(env.MARKET_CLOSE_TIME), {
     message: 'MARKET_OPEN_TIME must be earlier than MARKET_CLOSE_TIME',
@@ -114,6 +115,10 @@ export interface AppConfig {
     readonly timeZone: string;
     readonly openTime: string;
     readonly closeTime: string;
+  };
+  readonly idempotency: {
+    /** How long a completed request can be replayed with the same Idempotency-Key. */
+    readonly ttlSeconds: number;
   };
   readonly auth: {
     /** Empty = authentication disabled (only allowed outside production). */
@@ -163,6 +168,9 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
       timeZone: parsed.MARKET_TIMEZONE,
       openTime: parsed.MARKET_OPEN_TIME,
       closeTime: parsed.MARKET_CLOSE_TIME,
+    },
+    idempotency: {
+      ttlSeconds: parsed.IDEMPOTENCY_TTL_SECONDS,
     },
     auth: {
       apiKeys: parsed.API_KEYS,
