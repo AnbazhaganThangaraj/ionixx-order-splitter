@@ -33,7 +33,9 @@ business logic.
 **Build in small, verified stages.** Setup → validation → calculation → scheduler →
 storage → API → docs, each with its own tests and commit, and build, lint, type-check and
 tests run before moving on. I then ran the real server, called every endpoint, and checked
-a fresh clone from GitHub the way a reviewer would.
+a fresh clone from GitHub the way a reviewer would. Because the brief stresses
+performance, I also load-tested the compiled server (`npm run perf`) and documented the
+results in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 **Then harden it like a production service.** Because the brief asks for production-grade
 quality, I reviewed the result as if it were going live and added: API-key authentication
@@ -110,6 +112,15 @@ scanning. Each review round found real defects (section 3), which were fixed wit
     0**, which an orchestrator reads as success. It now logs a fatal error and exits with 1.
   - There was no handling for unhandled promise rejections or uncaught exceptions; they
     are now logged as structured fatal events and the process drains and exits with 1.
+- **Performance as data grows.** The first load test showed that listing history slowed
+  down as orders accumulated: at ~146,000 stored orders `GET /orders?limit=20` managed only
+  123 requests/s with a p99 of 4.4 s, because every call copied and reversed all orders to
+  return 20. Expired idempotency keys were also found by scanning every record. I changed
+  the store to keep per-partner id lists so a page is a slice from the end, and made the
+  expiry sweep stop at the first unexpired record: history paging went to ~5,900 req/s
+  with a p99 of 16 ms at ~176,000 orders, and create-with-key throughput doubled. Memory
+  still grows with every order (~1.5 GB at ~176,000), which is inherent to the in-memory
+  design and a reason for a database in production.
 - **Keeping documentation honest.** A hand-written OpenAPI document drifts. Contract tests
   now validate real responses against it and fail if any documented response or error
   code is never exercised; I confirmed they catch drift by removing a field from the docs.
@@ -132,7 +143,10 @@ scanning. Each review round found real defects (section 3), which were fixed wit
   authentication, rate limiting, order creation and idempotency conflicts.
 - Liveness/readiness probes, graceful shutdown, fatal-error handling, fail-fast
   configuration.
-- A non-root Docker image without package managers; CI with lint, type-check, 318 tests,
+- A repeatable load test (`npm run perf`) with documented results: a 2-stock order costs
+  ~0.15 ms of server time, ~8,000 creates/s from one process at 50 concurrent connections
+  (p99 11 ms) on a 4-vCPU VM.
+- A non-root Docker image without package managers; CI with lint, type-check, 320 tests,
   coverage, build, dependency audit, image smoke test, Trivy image scan, gitleaks secret
   scan, CodeQL and Dependabot. The threat model is in [SECURITY.md](SECURITY.md).
 
@@ -154,6 +168,9 @@ scanning. Each review round found real defects (section 3), which were fixed wit
   updates beyond `SCHEDULED`.
 - **Business controls:** per-partner limits on order value and daily volume, with alerts
   driven by the audit events.
+- **Scaling and load:** run one process per CPU core or several replicas behind the load
+  balancer (which needs the shared stores above), with load tests in a production-like
+  environment, including the database, as a release gate.
 - **Operations:** metrics (latency percentiles, error rates), distributed tracing,
   centralised and retained logs, alerting, separate environments, CI/CD with rollback,
   signed images, read-only container filesystems, and regular penetration testing.
@@ -198,5 +215,7 @@ local repository.
   scheduler dates against a calendar (both DST changes, Friday → Monday).
 - The contract tests were checked by deliberately breaking the documentation and
   confirming that the suite failed.
+- A load test measured throughput and latency before and after changes; it is how the
+  slow history paging was found and how the fix was confirmed.
 - Generated code was not accepted on trust: the defects listed in section 3 were found by
   tests and by running the real process, and fixed with regression tests.

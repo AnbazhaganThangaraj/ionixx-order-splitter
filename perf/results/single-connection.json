@@ -1,0 +1,118 @@
+{
+  "environment": {
+    "date": "2026-11-24T16:36:05.681Z",
+    "node": "v22.23.5",
+    "cpus": "4 x unknown",
+    "memoryGb": 4,
+    "platform": "linux 6.8.0-149-generic",
+    "serverRssMbAtEnd": 872,
+    "connections": 1,
+    "durationSecondsPerScenario": 4
+  },
+  "results": [
+    {
+      "scenario": "GET /health/live (baseline)",
+      "requestsPerSec": 15196,
+      "meanMs": 0.066,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 3,
+      "requests": 60776,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 1
+    },
+    {
+      "scenario": "POST /orders, 2 stocks",
+      "requestsPerSec": 6839,
+      "meanMs": 0.146,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 6,
+      "requests": 27353,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 1
+    },
+    {
+      "scenario": "POST /orders, 10 stocks",
+      "requestsPerSec": 5175,
+      "meanMs": 0.193,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 4,
+      "requests": 20697,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 27355
+    },
+    {
+      "scenario": "POST /orders, 100 stocks (max)",
+      "requestsPerSec": 1343,
+      "meanMs": 0.745,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 1,
+      "maxMs": 8,
+      "requests": 5371,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 48053
+    },
+    {
+      "scenario": "POST /orders, idempotent replay",
+      "requestsPerSec": 8744,
+      "meanMs": 0.114,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 7,
+      "requests": 34981,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 53425
+    },
+    {
+      "scenario": "POST /orders, unique Idempotency-Key each",
+      "requestsPerSec": 6209,
+      "meanMs": 0.161,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 2,
+      "requests": 24836,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 53426
+    },
+    {
+      "scenario": "GET /orders/{id}",
+      "requestsPerSec": 10674,
+      "meanMs": 0.094,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 3,
+      "requests": 42690,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 78263
+    },
+    {
+      "scenario": "GET /orders?limit=20",
+      "requestsPerSec": 5804,
+      "meanMs": 0.172,
+      "p50ms": 0,
+      "p90ms": 0,
+      "p99ms": 0,
+      "maxMs": 3,
+      "requests": 23215,
+      "non2xx": 0,
+      "errors": 0,
+      "ordersInMemoryAtStart": 78263
+    }
+  ]
+}

@@ -24,6 +24,7 @@ survive a restart, as the brief requires.
 - [Production readiness](#production-readiness)
 - [Architecture](#architecture)
 - [Testing](#testing)
+- [Performance](#performance)
 - [Dependencies](#dependencies)
 - [Assumptions and limitations](#assumptions-and-limitations)
 
@@ -118,17 +119,18 @@ QUANTITY_PRECISION=7 npm start
 
 ## Scripts
 
-| Command                 | What it does                                                   |
-| ----------------------- | -------------------------------------------------------------- |
-| `npm run dev`           | Start with auto-reload (tsx watch)                             |
-| `npm run build`         | Compile TypeScript to `dist/`                                  |
-| `npm start`             | Run the compiled app (`node dist/server.js`)                   |
-| `npm test`              | Run all unit and integration tests                             |
-| `npm run test:coverage` | Tests with a coverage report in `coverage/`                    |
-| `npm run lint`          | ESLint (strict, type-aware rules)                              |
-| `npm run typecheck`     | Type-check source and tests without emitting                   |
-| `npm run format`        | Format with Prettier                                           |
-| `npm run hash-key`      | Generate an API key and its hash (`-- --generate <partnerId>`) |
+| Command                 | What it does                                                    |
+| ----------------------- | --------------------------------------------------------------- |
+| `npm run dev`           | Start with auto-reload (tsx watch)                              |
+| `npm run build`         | Compile TypeScript to `dist/`                                   |
+| `npm start`             | Run the compiled app (`node dist/server.js`)                    |
+| `npm test`              | Run all unit and integration tests                              |
+| `npm run test:coverage` | Tests with a coverage report in `coverage/`                     |
+| `npm run lint`          | ESLint (strict, type-aware rules)                               |
+| `npm run typecheck`     | Type-check source and tests without emitting                    |
+| `npm run format`        | Format with Prettier                                            |
+| `npm run perf`          | Load test the compiled server (see [Performance](#performance)) |
+| `npm run hash-key`      | Generate an API key and its hash (`-- --generate <partnerId>`)  |
 
 ---
 
@@ -534,6 +536,8 @@ src/
 tests/
 ├── unit/                  # config, validators, calculator parts, scheduler, repository
 ├── integration/           # HTTP tests with Supertest
+├── contract/              # responses validated against the OpenAPI document
+├── e2e/                   # real server process: startup failures, shutdown, exit codes
 ├── fixtures/              # sample requests and orders
 └── helpers/               # test app builder with log capture and fixed clock
 ```
@@ -543,7 +547,7 @@ tests/
 ## Testing
 
 ```bash
-npm test                # 318 tests
+npm test                # 320 tests
 npm run test:coverage   # coverage report in coverage/
 ```
 
@@ -592,6 +596,27 @@ The tests focus on behaviour and edge cases:
 
 ---
 
+## Performance
+
+Response times are logged for every request (`durationMs`), and `npm run perf` load-tests
+the compiled server in production mode. Highlights from a 4-vCPU Linux VM, with the load
+generator on the same machine (full results, method and caveats in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md)):
+
+| Scenario                                    | Single client | 50 concurrent: req/s | 50 concurrent: p99 |
+| ------------------------------------------- | ------------: | -------------------: | -----------------: |
+| `POST /orders`, 2 stocks                    |       0.15 ms |                8,067 |              11 ms |
+| `POST /orders`, 100 stocks (max)            |       0.74 ms |                1,353 |              70 ms |
+| `GET /orders/{id}`                          |       0.09 ms |               11,195 |               8 ms |
+| `GET /orders?limit=20`, ~176k orders stored |       0.17 ms |                5,873 |              16 ms |
+
+The first load test found that listing history slowed down as orders accumulated
+(p99 4.4 s at ~146k orders) and that idempotency-key expiry scanned every record. Both
+were fixed (history paging is now independent of the number of stored orders); the
+before/after figures are in the performance document.
+
+---
+
 ## Dependencies
 
 **Runtime**
@@ -610,15 +635,17 @@ The tests focus on behaviour and edge cases:
 
 **Development**
 
-| Package                                     | Why                                       |
-| ------------------------------------------- | ----------------------------------------- |
-| `typescript`                                | Language and compiler (strict mode)       |
-| `tsx`                                       | Runs TypeScript directly in `npm run dev` |
-| `jest`, `ts-jest`                           | Test runner with TypeScript support       |
-| `supertest`                                 | In-process HTTP integration tests         |
-| `eslint`, `@eslint/js`, `typescript-eslint` | Linting with strict type-aware rules      |
-| `prettier`, `eslint-config-prettier`        | Consistent formatting                     |
-| `@types/*`                                  | Type definitions                          |
+| Package                                     | Why                                                        |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| `typescript`                                | Language and compiler (strict mode)                        |
+| `tsx`                                       | Runs TypeScript directly in `npm run dev`                  |
+| `jest`, `ts-jest`                           | Test runner with TypeScript support                        |
+| `supertest`                                 | In-process HTTP integration tests                          |
+| `ajv`, `ajv-formats`                        | Validating responses against the OpenAPI contract in tests |
+| `autocannon`                                | HTTP load testing (`npm run perf`)                         |
+| `eslint`, `@eslint/js`, `typescript-eslint` | Linting with strict type-aware rules                       |
+| `prettier`, `eslint-config-prettier`        | Consistent formatting                                      |
+| `@types/*`                                  | Type definitions                                           |
 
 `npm audit` reports moderate advisories in packages used internally by Jest (test
 tooling only; nothing in the running service). The suggested automatic fix downgrades
