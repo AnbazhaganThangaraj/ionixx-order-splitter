@@ -106,7 +106,7 @@ describe('API key authentication', () => {
     expect(response.status).toBe(200);
   });
 
-  it('is disabled when no keys are configured (local development)', async () => {
+  it('runs as the anonymous partner when authentication is explicitly disabled (local development)', async () => {
     const { app } = buildTestApp();
     const response = await request(app).post(ORDERS).send(briefExampleRequest);
     expect(response.status).toBe(201);

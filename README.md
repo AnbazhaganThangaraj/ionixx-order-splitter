@@ -10,6 +10,7 @@ not survive a restart, as the brief requires.
 
 | Document                                       | Contents                                                                   |
 | ---------------------------------------------- | -------------------------------------------------------------------------- |
+| [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)   | Every requirement in the brief traced to code and tests; use cases covered |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)   | HLD and LLD diagrams: context, layers, request pipeline, sequence, classes |
 | [docs/API.md](docs/API.md)                     | Full API reference: fields, responses, idempotency, errors                 |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, authentication setup                           |
