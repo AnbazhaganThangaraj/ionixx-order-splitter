@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { type RequestHandler, Router } from 'express';
 import type { Clock } from '../lib/clock';
 import type { AppLifecycle } from '../lib/lifecycle';
 import { methodNotAllowed } from '../middlewares/method-not-allowed.middleware';
@@ -17,12 +17,13 @@ export const createHealthRouter = (lifecycle: AppLifecycle, clock: Clock): Route
     timestamp: clock.now().toISOString(),
   });
 
-  router.get('/', (_req, res) => {
+  // One handler, two paths. Registered separately (not as an array) so the access log
+  // keeps a plain route template for each path.
+  const liveHandler: RequestHandler = (_req, res) => {
     res.status(200).json(live());
-  });
-  router.get('/live', (_req, res) => {
-    res.status(200).json(live());
-  });
+  };
+  router.get('/', liveHandler);
+  router.get('/live', liveHandler);
   router.get('/ready', (_req, res) => {
     if (lifecycle.isDraining) {
       res.status(503).json({ status: 'draining', timestamp: clock.now().toISOString() });
@@ -31,7 +32,9 @@ export const createHealthRouter = (lifecycle: AppLifecycle, clock: Clock): Route
     res.status(200).json({ status: 'ready', timestamp: clock.now().toISOString() });
   });
 
-  router.all(['/', '/live', '/ready'], methodNotAllowed(['GET']));
+  for (const path of ['/', '/live', '/ready']) {
+    router.all(path, methodNotAllowed(['GET']));
+  }
 
   return router;
 };

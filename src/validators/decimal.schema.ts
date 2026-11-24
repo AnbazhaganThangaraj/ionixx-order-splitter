@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { quote } from '../errors/app-error';
 import { Decimal } from '../lib/decimal';
+import { describeValue } from './schema-helpers';
 
 /** Plain non-negative decimal: digits, optional fraction. No signs, exponents, commas or spaces. */
 const DECIMAL_PATTERN = /^\d+(\.\d+)?$/;
@@ -35,13 +36,7 @@ export const positiveDecimal = ({
     } else {
       ctx.addIssue({
         code: 'custom',
-        message: `must be a decimal string such as "100.50" (got ${
-          typeof value === 'number'
-            ? 'a non-finite number'
-            : Array.isArray(value)
-              ? 'an array'
-              : typeof value
-        })`,
+        message: `must be a decimal string such as "100.50" (got ${describeValue(value)})`,
       });
       return z.NEVER;
     }

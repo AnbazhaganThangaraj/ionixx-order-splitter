@@ -1,11 +1,9 @@
-import type { OrderType } from '../domain/order.enums';
+import type { ListOrdersQuery } from '../domain/order.commands';
 import type { Order } from '../domain/order.types';
 
-export interface ListOrdersFilter {
+/** A list query scoped to one partner. */
+export interface ListOrdersFilter extends ListOrdersQuery {
   readonly partnerId: string;
-  readonly limit: number;
-  readonly offset: number;
-  readonly orderType?: OrderType | undefined;
 }
 
 export interface OrderPage {

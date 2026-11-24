@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { hashApiKey } from '../lib/crypto';
 import { minutesSinceMidnight, parseTimeOfDay } from '../lib/time-of-day';
+import { type DigitsIntegerSchema, digitsInteger } from '../validators/schema-helpers';
 
 const POSITIVE_DECIMAL = /^(?!0+(\.0+)?$)\d+(\.\d+)?$/;
 
@@ -66,21 +67,13 @@ const parseKeyList =
     return entries;
   };
 
-/** Whole numbers only: rejects "1e3", "0x10", "2.5" and other forms Number() would accept. */
-type IntegerSchema = z.ZodPipe<z.ZodPipe<z.ZodString, z.ZodTransform<number, string>>, z.ZodNumber>;
-
-const integerSetting = (min: number, max: number, fallback: number): z.ZodDefault<IntegerSchema> =>
-  z
-    .string()
-    .regex(/^\d+$/, `must be a whole number from ${min} to ${max}`)
-    .transform(Number)
-    .pipe(
-      z
-        .number()
-        .min(min, `must be a whole number from ${min} to ${max}`)
-        .max(max, `must be a whole number from ${min} to ${max}`),
-    )
-    .default(fallback);
+/** Whole-number setting within [min, max] (plain digits only), with a default. */
+const integerSetting = (
+  min: number,
+  max: number,
+  fallback: number,
+): z.ZodDefault<DigitsIntegerSchema> =>
+  digitsInteger(min, max, `must be a whole number from ${min} to ${max}`).default(fallback);
 
 const timeOfDaySetting = (fallback: string): z.ZodDefault<z.ZodString> =>
   z

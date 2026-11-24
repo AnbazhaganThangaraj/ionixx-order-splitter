@@ -47,4 +47,19 @@ describe('Health checks', () => {
     const response = await request(app).get('/api/v1/orders').set('Connection', 'keep-alive');
     expect(response.headers.connection).toBe('keep-alive');
   });
+
+  it('logs a plain route template for each health path, including 405s', async () => {
+    const { app, logs } = buildTestApp();
+    await request(app).get('/health');
+    await request(app).get('/health/live');
+    await request(app).post('/health/ready');
+
+    expect(
+      logs.filter((l) => typeof l.route === 'string').map((l) => [l.route, l.statusCode]),
+    ).toEqual([
+      ['/health', 200],
+      ['/health/live', 200],
+      ['/health/ready', 405],
+    ]);
+  });
 });

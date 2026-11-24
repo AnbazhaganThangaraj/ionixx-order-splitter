@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { CreateOrderCommand, ListOrdersQuery } from '../domain/order.commands';
 import { ORDER_TYPES, SUPPORTED_CURRENCIES } from '../domain/order.enums';
-import { quote } from '../errors/app-error';
 import { Decimal } from '../lib/decimal';
 import { positiveDecimal } from './decimal.schema';
+import { describeValue, digitsInteger } from './schema-helpers';
 
 /** Upper bounds are sanity limits for the POC, not business rules. */
 export const ORDER_LIMITS = {
@@ -21,14 +21,6 @@ const PORTFOLIO_ITEM_FIELDS = ['symbol', 'allocation', 'marketPrice'];
 const ORDER_FIELDS = ['orderType', 'totalAmount', 'currency', 'portfolio'];
 const QUERY_FIELDS = ['limit', 'offset', 'orderType'];
 
-/** Describes a received value for an error message without echoing large inputs. */
-const describe = (input: unknown): string => {
-  if (input === null) return 'null';
-  if (Array.isArray(input)) return 'an array';
-  if (typeof input === 'string') return quote(input, 20);
-  return typeof input === 'object' ? 'an object' : typeof input;
-};
-
 interface IssueLike {
   readonly code?: string;
   readonly input?: unknown;
@@ -41,7 +33,7 @@ const requiredOr =
   (issue: IssueLike): string =>
     issue.input === undefined
       ? `is required (${requirement})`
-      : `must be ${requirement} (got ${describe(issue.input)})`;
+      : `must be ${requirement} (got ${describeValue(issue.input)})`;
 
 /** Message for a strict object: lists unknown AND allowed fields, or says what was expected. */
 const strictObjectError =
@@ -131,25 +123,14 @@ export const toCreateOrderCommand = (
 
 const pageSizeMessage = `must be an integer from 1 to ${ORDER_LIMITS.maxPageSize}`;
 
-/** Query-string integer: digits only (no "1e1", "0x10" or "2.5"), within [min, max]. */
-const queryInteger = (
-  min: number,
-  max: number,
-  message: string,
-): z.ZodPipe<z.ZodPipe<z.ZodString, z.ZodTransform<number, string>>, z.ZodNumber> =>
-  z
-    .string({ error: message })
-    .regex(/^\d+$/, message)
-    .transform(Number)
-    .pipe(z.number().min(min, message).max(max, message));
 const offsetMessage = 'must be an integer of 0 or more';
 
 export const listOrdersQuerySchema = z.strictObject(
   {
-    limit: queryInteger(1, ORDER_LIMITS.maxPageSize, pageSizeMessage).default(
+    limit: digitsInteger(1, ORDER_LIMITS.maxPageSize, pageSizeMessage).default(
       ORDER_LIMITS.defaultPageSize,
     ),
-    offset: queryInteger(0, Number.MAX_SAFE_INTEGER, offsetMessage).default(0),
+    offset: digitsInteger(0, Number.MAX_SAFE_INTEGER, offsetMessage).default(0),
     orderType: z
       .enum(ORDER_TYPES, { error: requiredOr(`one of ${ORDER_TYPES.join(', ')}`) })
       .optional(),

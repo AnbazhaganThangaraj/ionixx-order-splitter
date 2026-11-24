@@ -31,6 +31,17 @@ const errorResponse = (description: string, code: string): Record<string, unknow
 });
 
 const secured = [{ ApiKeyAuth: [] }];
+
+/** Responses every authenticated /api/v1 operation can return. */
+const securedErrorResponses = {
+  '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
+  '429': errorResponse(
+    'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
+      '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
+    'RATE_LIMITED',
+  ),
+  '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
+};
 /** Response number formats: plain decimal strings; money always has exactly 2 decimals. */
 const DECIMAL = '^\\d+(\\.\\d+)?$';
 const MONEY = '^\\d+\\.\\d{2}$';
@@ -107,6 +118,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           },
         },
         responses: {
+          ...securedErrorResponses,
           '201': {
             description: 'Order created',
             headers: {
@@ -120,7 +132,6 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
           },
           '400': errorResponse('Invalid JSON or failed validation', 'VALIDATION_ERROR'),
-          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
           '409': errorResponse(
             'A request with this Idempotency-Key is still being processed',
             'IDEMPOTENCY_REQUEST_IN_PROGRESS',
@@ -133,12 +144,6 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
               '(IDEMPOTENCY_KEY_REUSED)',
             'ORDER_NOT_EXECUTABLE',
           ),
-          '429': errorResponse(
-            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
-              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
-            'RATE_LIMITED',
-          ),
-          '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
       get: {
@@ -160,18 +165,12 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           { name: 'orderType', in: 'query', schema: { type: 'string', enum: [...ORDER_TYPES] } },
         ],
         responses: {
+          ...securedErrorResponses,
           '200': {
             description: 'A page of orders',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/OrderPage' } } },
           },
           '400': errorResponse('Invalid query parameters', 'VALIDATION_ERROR'),
-          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
-          '429': errorResponse(
-            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
-              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
-            'RATE_LIMITED',
-          ),
-          '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
     },
@@ -189,19 +188,13 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
           },
         ],
         responses: {
+          ...securedErrorResponses,
           '200': {
             description: 'The order',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
           },
           '400': errorResponse('orderId is not a UUID', 'VALIDATION_ERROR'),
-          '401': errorResponse('Missing or invalid API key', 'UNAUTHORIZED'),
           '404': errorResponse('No order with this id for your partner account', 'NOT_FOUND'),
-          '429': errorResponse(
-            'Too many requests: per-IP limit (RATE_LIMITED) or per-partner quota ' +
-              '(PARTNER_QUOTA_EXCEEDED); see Retry-After',
-            'RATE_LIMITED',
-          ),
-          '500': errorResponse('Unexpected error (details are never exposed)', 'INTERNAL_ERROR'),
         },
       },
     },
