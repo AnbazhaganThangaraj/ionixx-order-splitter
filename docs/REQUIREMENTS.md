@@ -39,13 +39,13 @@ implemented, which tests prove it, and the use cases covered. Test references ar
 
 ## Submission requirements
 
-| #   | Requirement                                             | Status | Where                                                                                             |
-| --- | ------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------- |
-| S1  | Source code in a public GitHub repository               | ✅     | `AnbazhaganThangaraj/ionixx-order-splitter` (public)                                              |
-| S2  | Must compile                                            | ✅     | `npm run build`; CI builds on every push                                                          |
-| S3  | README with execution instructions and request examples | ✅     | [README](../README.md): quick start, Docker, curl example with response; more in [API.md](API.md) |
-| S4  | README documents library and framework dependencies     | ✅     | README › Dependencies (each library and why it is used)                                           |
-| S5  | ANSWERS file responding to the five questions           | ✅     | [ANSWERS.md](../ANSWERS.md), headings are the questions verbatim                                  |
+| #   | Requirement                                             | Status | Where                                                                                                                                                                                  |
+| --- | ------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | Source code in a public GitHub repository               | ✅     | `AnbazhaganThangaraj/ionixx-order-splitter` (public)                                                                                                                                   |
+| S2  | Must compile                                            | ✅     | `npm run build`; CI builds on every push                                                                                                                                               |
+| S3  | README with execution instructions and request examples | ✅     | [README](../README.md): quick start, Docker, and [request examples](../README.md#request-examples) with real responses for BUY, SELL, price override, retries, history and error cases |
+| S4  | README documents library and framework dependencies     | ✅     | README › Dependencies (each library and why it is used)                                                                                                                                |
+| S5  | ANSWERS file responding to the five questions           | ✅     | [ANSWERS.md](../ANSWERS.md), headings are the questions verbatim                                                                                                                       |
 
 ## Assessment expectations
 
