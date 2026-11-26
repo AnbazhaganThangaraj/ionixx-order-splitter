@@ -797,7 +797,8 @@ Response: `401`
 ```
 
 ```bash
-curl -s http://localhost:3001/api/v1/orders -H 'X-API-Key: wrong-key'
+API_KEY=wrong-key
+curl -s http://localhost:3001/api/v1/orders -H "X-API-Key: $API_KEY"
 ```
 
 Response: `401`
@@ -813,7 +814,7 @@ Response: `401`
 }
 ```
 
-With the right key (`-H 'X-API-Key: local-dev-key-not-a-secret'`) the same
+With the right key (`API_KEY=local-dev-key-not-a-secret`) the same
 request returns `200`. Rate-limit (`429`) and other responses are described in
 [docs/API.md](docs/API.md).
 
